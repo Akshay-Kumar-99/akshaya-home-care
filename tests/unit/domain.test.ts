@@ -6,11 +6,7 @@ import {
   renderInvoiceMessage,
 } from '../../src/shared/invoice-template.ts';
 import { formatInr, parseWholeRupees, rupeesToPaise } from '../../src/shared/money.ts';
-import {
-  formatPhoneForDisplay,
-  normalizeIndianMobile,
-  whatsAppChatLink,
-} from '../../src/shared/phone.ts';
+import { formatPhoneForDisplay, normalizeIndianMobile } from '../../src/shared/phone.ts';
 import { SubmissionInputSchema } from '../../src/shared/schemas.ts';
 
 describe('money (integer paise)', () => {
@@ -63,9 +59,8 @@ describe('phone normalisation (E.164)', () => {
     },
   );
 
-  it('builds display text and a wa.me link with no prefilled text', () => {
+  it('formats a phone for display', () => {
     expect(formatPhoneForDisplay('+919841459657')).toBe('+91 98414 59657');
-    expect(whatsAppChatLink('+919841459657')).toBe('https://wa.me/919841459657');
   });
 });
 

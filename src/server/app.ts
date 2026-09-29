@@ -3,8 +3,13 @@ import { secureHeaders } from 'hono/secure-headers';
 import type { AppDeps, AppEnv } from './http/context.ts';
 import { sameOriginGuard } from './http/middleware.ts';
 import { adminRoutes } from './routes/admin.ts';
+import { analyticsRoutes } from './routes/analytics.ts';
 import { authRoutes } from './routes/auth.ts';
 import { healthRoutes } from './routes/health.ts';
+import { invoiceRoutes, voidRequestRoutes } from './routes/invoices.ts';
+import { jobRoutes, lookupRoutes } from './routes/jobs.ts';
+import { pushRoutes } from './routes/push.ts';
+import { workInvRoutes } from './routes/workinv.ts';
 import { serveSpa } from './static.ts';
 
 export interface AppOptions {
@@ -51,6 +56,13 @@ export function createApp(options: AppOptions = {}): Hono<AppEnv> {
     app.use('/api/*', sameOriginGuard);
     app.route('/api/auth', authRoutes);
     app.route('/api/admin', adminRoutes);
+    app.route('/api/lookups', lookupRoutes);
+    app.route('/api/jobs', jobRoutes);
+    app.route('/api/workinv', workInvRoutes);
+    app.route('/api/invoices', invoiceRoutes);
+    app.route('/api/void-requests', voidRequestRoutes);
+    app.route('/api/push', pushRoutes);
+    app.route('/api/analytics', analyticsRoutes);
   }
 
   app.all('/api/*', (c) => c.json({ error: 'not_found' }, 404));

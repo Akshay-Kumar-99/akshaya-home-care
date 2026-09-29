@@ -10,7 +10,20 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  /** Web Push (optional): all three set enables push; all empty disables it. */
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().optional(),
 });
+
+export function vapidFrom(config: Config): { publicKey: string; privateKey: string; subject: string } | null {
+  const { VAPID_PUBLIC_KEY: publicKey, VAPID_PRIVATE_KEY: privateKey, VAPID_SUBJECT: subject } = config;
+  if (!publicKey && !privateKey && !subject) return null;
+  if (!publicKey || !privateKey || !subject) {
+    throw new Error('Set all three of VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT, or none of them');
+  }
+  return { publicKey, privateKey, subject };
+}
 
 export type Config = z.infer<typeof EnvSchema>;
 

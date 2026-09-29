@@ -1,0 +1,15 @@
+{
+  // The service worker runs in a worker scope, not a window: type-check it with WebWorker types.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "WebWorker"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": []
+  },
+  "files": ["src/web/sw.ts"]
+}

@@ -18,5 +18,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "scripts", "tests", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "scripts", "tests", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"],
+  "exclude": ["src/web/sw.ts"]
 }

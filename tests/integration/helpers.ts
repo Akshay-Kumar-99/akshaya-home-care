@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import type pg from 'pg';
-import type { RoleKey } from '../../src/shared/constants.ts';
+import { roleUsesPin, type RoleKey } from '../../src/shared/constants.ts';
+import { isWeakPin } from '../../src/shared/credentials.ts';
 import { SubmissionInputSchema, type SubmissionInputRaw } from '../../src/shared/schemas.ts';
 import { generatePassword, generatePin } from '../../src/server/auth/hashing.ts';
 import { createApp } from '../../src/server/app.ts';
@@ -9,6 +10,9 @@ import { SlidingWindowLimiter } from '../../src/server/auth/rate-limit.ts';
 import { SessionStore } from '../../src/server/auth/sessions.ts';
 import { createPool } from '../../src/server/db/client.ts';
 import type { AppDeps } from '../../src/server/http/context.ts';
+import { LookupsCache } from '../../src/server/services/lookups.ts';
+import { PushService } from '../../src/server/services/push.ts';
+import { QueueState } from '../../src/server/services/queue-state.ts';
 import { SettingsCache } from '../../src/server/services/settings.ts';
 import { runMigrations } from '../../src/server/db/migrate.ts';
 import { runSeed } from '../../src/server/db/seed.ts';
@@ -88,6 +92,9 @@ export function buildTestApp(pool: pg.Pool, options: { limiter?: SlidingWindowLi
     pool,
     settings,
     sessions: new SessionStore(pool, settings),
+    lookups: new LookupsCache(pool),
+    queue: new QueueState(pool),
+    push: new PushService(pool, null),
     pepper: TEST_PEPPER,
     secureCookies: false,
     trustProxy: true,
@@ -157,6 +164,36 @@ export class TestClient {
       deviceKind,
     });
   }
+}
+
+/** A random PIN that passes the weak-PIN rules. */
+export function strongPin(): string {
+  for (;;) {
+    const pin = generatePin();
+    if (!isWeakPin(pin)) return pin;
+  }
+}
+
+/** Logs in over HTTP and completes the forced first-login change. Mutates `account`. */
+export async function activateAccount(
+  app: ReturnType<typeof createApp>,
+  account: SeededAccount,
+  kind: 'mobile' | 'desktop' = 'mobile',
+): Promise<TestClient> {
+  const client = new TestClient(app);
+  const login = await client.login(account, kind);
+  if (login.status !== 200) throw new Error(`login failed for ${account.displayName}: ${login.status}`);
+  const newPassword = generatePassword();
+  const newPin = roleUsesPin(account.role) ? strongPin() : undefined;
+  const res = await client.post('/api/auth/change-credentials', {
+    currentPassword: account.password,
+    newPassword,
+    newPin,
+  });
+  if (res.status !== 200) throw new Error(`credential change failed for ${account.displayName}`);
+  account.password = newPassword;
+  account.pin = newPin;
+  return client;
 }
 
 export async function loadActors(pool: pg.Pool): Promise<Record<RoleKey, Actor[]>> {

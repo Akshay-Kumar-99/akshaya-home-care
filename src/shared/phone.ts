@@ -37,8 +37,3 @@ export function formatPhoneForDisplay(e164: string): string {
   const national = nationalNumber(e164);
   return /^\d{10}$/.test(national) ? `+91 ${national.slice(0, 5)} ${national.slice(5)}` : e164;
 }
-
-/** Click-to-chat link with NO prefilled text: https://wa.me/919841459657 */
-export function whatsAppChatLink(e164: string): string {
-  return `https://wa.me/${e164.replace(/^\+/, '')}`;
-}

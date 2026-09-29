@@ -399,6 +399,28 @@ export const auditLog = pgTable(
   (t) => [index('audit_log_entity_idx').on(t.entityType, t.entityId, t.occurredAt)],
 );
 
+/**
+ * Web Push subscriptions for checkers (Work Inv alerts). Operational data, not business
+ * records: expired subscriptions (404/410 from the push service) are deleted.
+ */
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    userAgent: text('user_agent'),
+    createdAt: createdAt(),
+    lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+    failureCount: integer('failure_count').notNull().default(0),
+  },
+  (t) => [index('push_subscriptions_user_idx').on(t.userId)],
+);
+
 /** Single-row gapless counter. `start_value` is picked once by the seed and never changes. */
 export const invoiceCounter = pgTable(
   'invoice_counter',

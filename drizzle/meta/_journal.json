@@ -36,6 +36,13 @@
       "when": 1790690177234,
       "tag": "0004_technicians_no_pin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790692244289,
+      "tag": "0005_push_subscriptions",
+      "breakpoints": true
     }
   ]
 }

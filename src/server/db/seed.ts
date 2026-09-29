@@ -16,6 +16,7 @@ import {
   isValidPassword,
   isValidPin,
 } from '../auth/hashing.ts';
+import { CHENNAI_AREAS } from './chennai-areas.ts';
 import { withTransaction } from './client.ts';
 
 // Idempotent seed. Safe to run any number of times:
@@ -72,22 +73,7 @@ const SERVICE_PRESETS = [
   'Uninstallation',
 ];
 
-const AREAS = [
-  'Thiruvanmiyur',
-  'Adyar',
-  'Besant Nagar',
-  'Indira Nagar',
-  'Kottivakkam',
-  'Palavakkam',
-  'Neelankarai',
-  'Injambakkam',
-  'Taramani',
-  'Velachery',
-  'Kotturpuram',
-  'Mylapore',
-  'Perungudi',
-  'Thoraipakkam',
-];
+const AREAS = CHENNAI_AREAS;
 
 const BRANDS = [
   'LG',

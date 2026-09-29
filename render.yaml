@@ -1,5 +1,8 @@
 # Render Blueprint. Free web service in Singapore, next to Neon aws-ap-southeast-1.
+# Node version comes from .node-version (22.x; Render's own default would be 24).
 # Secrets use sync: false, so Render asks for them in the dashboard. They are never stored here.
+# Web Push (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT) is optional: add all three
+# later in the dashboard to switch it on (see docs/deploy.md).
 services:
   - type: web
     name: akshaya-home-care
@@ -20,10 +23,4 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: PIN_PEPPER
-        sync: false
-      - key: VAPID_PUBLIC_KEY
-        sync: false
-      - key: VAPID_PRIVATE_KEY
-        sync: false
-      - key: VAPID_SUBJECT
         sync: false
