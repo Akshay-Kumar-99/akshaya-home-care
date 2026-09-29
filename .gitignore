@@ -1,0 +1,27 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+
+# Secrets: never commit real env files
+.env
+.env.*
+!.env.example
+
+# Backups and exports may contain customer PII
+backups/
+*.dump
+*.sql.gz
+*.age
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+
+# One-time credential printouts: read, store safely, then delete
+*-DELETE-ME.txt

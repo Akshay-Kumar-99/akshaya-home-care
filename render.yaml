@@ -1,0 +1,29 @@
+# Render Blueprint. Free web service in Singapore, next to Neon aws-ap-southeast-1.
+# Secrets use sync: false, so Render asks for them in the dashboard. They are never stored here.
+services:
+  - type: web
+    name: akshaya-home-care
+    runtime: node
+    plan: free
+    region: singapore
+    # --include=dev because the Vite build needs devDependencies while NODE_ENV=production.
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render terminates TLS at its proxy; the client IP arrives in X-Forwarded-For.
+      - key: TRUST_PROXY
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: PIN_PEPPER
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false

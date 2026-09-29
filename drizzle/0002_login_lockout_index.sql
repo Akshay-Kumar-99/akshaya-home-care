@@ -1,0 +1,1 @@
+CREATE INDEX "login_attempts_username_time_idx" ON "login_attempts" USING btree ("username_attempted","created_at");
