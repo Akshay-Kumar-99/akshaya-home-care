@@ -9,6 +9,7 @@ import { Icon } from '../components/Icon.tsx';
 import { Dialog, EmptyState, Field, Skeleton } from '../components/ui.tsx';
 import { t } from '../i18n/en.ts';
 import { api, ApiError } from '../lib/api.ts';
+import { useLatestRequest } from '../lib/latest.ts';
 import { copyWhenReady } from '../lib/clipboard.ts';
 import { istDateString } from '../../shared/dates.ts';
 import { dateTimeIst, formatDateDmy, formatInr, formatPhoneForDisplay } from '../lib/format.ts';
@@ -66,10 +67,12 @@ export function Invoices({ initialQuery = '' }: { initialQuery?: string }) {
   const showProfit = can('profit.view');
   const today = istDateString();
   const bounds = dateBounds(dateFilter, rangeFrom, rangeTo, today);
+  const begin = useLatestRequest();
 
   const fetchPage = useCallback(
     async (after: string | null) => {
       if (bounds === 'invalid') return;
+      const isLatest = begin();
       const params = new URLSearchParams({ limit: '30' });
       if (q.trim()) params.set('q', q.trim());
       if (state) params.set('state', state);
@@ -77,6 +80,7 @@ export function Invoices({ initialQuery = '' }: { initialQuery?: string }) {
       if (bounds.to) params.set('to', bounds.to);
       if (after) params.set('cursor', after);
       const res = await api<{ items: InvoiceRow[]; nextCursor: string | null }>(`/api/invoices?${params}`);
+      if (!isLatest()) return;
       setItems((prev) => (after && prev ? [...prev, ...res.items] : res.items));
       setCursor(res.nextCursor);
     },

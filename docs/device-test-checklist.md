@@ -85,6 +85,7 @@ Device / browser: ______________________ Date: __________ Tester: __________
 
 ## E. Every device
 - [ ] No sideways scrolling on any screen.
+- [ ] Phones: the top header (logo, name, theme, sign out) scrolls away as you scroll down and is back only at the top of the page; it never covers the content. The bottom tab bar stays.
 - [ ] Buttons and chips are at least finger-sized (48 px).
 - [ ] Dark and light themes are both readable (theme button in the top bar cycles Auto → Dark → Light); light is readable outdoors in sunlight.
 - [ ] Area picker: typing "thiru" suggests Thiruvanmiyur, Thirumangalam, Thiruverkadu, Thiruneermalai, Thirumullaivoyal.

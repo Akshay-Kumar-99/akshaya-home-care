@@ -139,6 +139,14 @@ test.describe.serial('technician and admin technician on Android', () => {
     const payment = await page.getByRole('radiogroup', { name: 'Payment' }).boundingBox();
     expect(bar!.y).toBeGreaterThan(payment!.y + payment!.height);
     await page.screenshot(shots('10-new-invoice-360'));
+    // The header scrolls away with the page and is back only at the top.
+    const header = page.locator('.appbar');
+    await page.evaluate(() => window.scrollTo(0, 600));
+    await expect(header).not.toBeInViewport();
+    await page.evaluate(() => window.scrollTo(0, 300));
+    await expect(header).not.toBeInViewport();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(header).toBeInViewport();
     await page.getByRole('button', { name: 'Work orders' }).click();
     await expect(page.getByRole('heading', { name: 'Work orders' })).toBeVisible();
     await expectNoHorizontalScroll(page);

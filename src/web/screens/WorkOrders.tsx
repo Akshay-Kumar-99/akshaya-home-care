@@ -8,6 +8,7 @@ import { WorkCard } from '../components/WorkCard.tsx';
 import { Chips, Combobox, Dialog, EmptyState, Field, Skeleton } from '../components/ui.tsx';
 import { t } from '../i18n/en.ts';
 import { api, ApiError, isNetworkError } from '../lib/api.ts';
+import { useLatestRequest } from '../lib/latest.ts';
 import { useLookups } from '../lib/lookups.ts';
 
 type View = 'open' | 'completed' | 'cancelled';
@@ -71,14 +72,17 @@ export function WorkOrders() {
   const [changing, setChanging] = useState<WorkOrder | null>(null);
   const [cancelling, setCancelling] = useState<WorkOrder | null>(null);
 
+  const begin = useLatestRequest();
+
   const load = useCallback(async () => {
+    const isLatest = begin();
     try {
       const res = await api<{ items: WorkOrder[] }>(`/api/work?view=${view}`);
-      setItems(res.items);
+      if (isLatest()) setItems(res.items);
     } catch (err) {
-      if (!isNetworkError(err)) toast({ text: t.somethingWrong, tone: 'error' });
+      if (isLatest() && !isNetworkError(err)) toast({ text: t.somethingWrong, tone: 'error' });
     }
-  }, [view, toast]);
+  }, [view, toast, begin]);
 
   useEffect(() => {
     setItems(null);

@@ -7,6 +7,7 @@ import { Icon } from '../components/Icon.tsx';
 import { Dialog, EmptyState, Initials, Skeleton } from '../components/ui.tsx';
 import { t } from '../i18n/en.ts';
 import { api } from '../lib/api.ts';
+import { useLatestRequest } from '../lib/latest.ts';
 import {
   bucketLabel,
   formatDateDmy,
@@ -81,18 +82,26 @@ export function Dashboard() {
   const [customer, setCustomer] = useState<string | null>(null);
   const [trendTable, setTrendTable] = useState(false);
 
-  const load = useCallback(async (key: PresetKey) => {
-    const { from, to } = presetRange(key);
-    setLoading(true);
-    try {
-      setData(await api<AnalyticsOverview>(`/api/analytics/overview?from=${from}&to=${to}`));
-      setError(false);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const begin = useLatestRequest();
+
+  const load = useCallback(
+    async (key: PresetKey) => {
+      const { from, to } = presetRange(key);
+      const isLatest = begin();
+      setLoading(true);
+      try {
+        const next = await api<AnalyticsOverview>(`/api/analytics/overview?from=${from}&to=${to}`);
+        if (!isLatest()) return;
+        setData(next);
+        setError(false);
+      } catch {
+        if (isLatest()) setError(true);
+      } finally {
+        if (isLatest()) setLoading(false);
+      }
+    },
+    [begin],
+  );
 
   useEffect(() => {
     void load(preset);
