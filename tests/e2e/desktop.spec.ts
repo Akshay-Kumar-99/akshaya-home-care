@@ -12,10 +12,11 @@ test('Master: dashboard, Copy invoice, invoice list with profit, and void', asyn
   await expect(page.getByRole('heading', { name: 'Business dashboard' })).toBeVisible();
   await expectNoHorizontalScroll(page);
 
-  // Copy invoice for the Master's own job (creates the invoice and copies it; no chat pop-up).
-  const name = `Desk ${uniquePhone().slice(-4)}`;
+  // Copy invoice for the Master's own job: first the phone, then the invoice (no chat pop-up).
+  const phone = uniquePhone();
+  const name = `Desk ${phone.slice(-4)}`;
   await page.getByRole('button', { name: 'New Invoice' }).click();
-  await page.getByLabel('Customer phone').fill(uniquePhone());
+  await page.getByLabel('Customer phone').fill(phone);
   await page.getByLabel('Customer name').fill(name);
   await page.getByLabel('Area').fill('Besant Nagar');
   await page.getByRole('radio', { name: 'Refrigerator' }).click();
@@ -23,6 +24,8 @@ test('Master: dashboard, Copy invoice, invoice list with profit, and void', asyn
   await page.getByLabel('Total (₹)').fill('5400');
   await page.getByLabel('Spare cost (₹)').fill('3100');
   await page.getByRole('radio', { name: 'Cash' }).click();
+  await page.getByRole('button', { name: 'Copy phone', exact: true }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(phone);
   await page.getByRole('button', { name: 'Copy invoice' }).click();
   await expect(page.getByRole('status').filter({ hasText: /INV-\d+ copied\. Paste it in the customer's WhatsApp\./ })).toBeVisible();
   const clip = await page.evaluate(() => navigator.clipboard.readText());

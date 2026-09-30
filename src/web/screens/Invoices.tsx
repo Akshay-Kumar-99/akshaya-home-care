@@ -4,6 +4,7 @@ import { formatInvoiceNumber } from '../../shared/invoice-template.ts';
 import { StepUpCancelled, useFeedback } from '../app/feedback.tsx';
 import { useQueue } from '../app/queue.tsx';
 import { useSession } from '../app/session.tsx';
+import { PhoneThenInvoice } from '../components/CopyPhoneFirst.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { Dialog, EmptyState, Field, Skeleton } from '../components/ui.tsx';
 import { t } from '../i18n/en.ts';
@@ -259,16 +260,21 @@ function InvoiceDialog({ id, onClose }: { id: string; onClose: (changed: boolean
   const canVoid = can('invoice.void');
   const canRequest = can('void.request') && !canVoid;
 
-  function copyAgain() {
+  /** The second tap (after Copy phone): copies the stored message again. */
+  function copyAgain(): Promise<boolean> {
     const request = api<CopyResponse>(`/api/workinv/${id}/copy`, { method: 'POST', body: { expect: 'issued' } });
     const copied = copyWhenReady(request.then((r) => r.message));
-    request
+    return request
       .then(async (r) => {
         if (!(await copied)) showCopyFallback(r.message);
         toast({ text: t.copiedFor(formatInvoiceNumber(r.invoiceNumber), r.customerName), tone: 'ok' });
         poll();
+        return true;
       })
-      .catch(() => toast({ text: t.somethingWrong, tone: 'error' }));
+      .catch(() => {
+        toast({ text: t.somethingWrong, tone: 'error' });
+        return false;
+      });
   }
 
   async function submitVoid(e: FormEvent) {
@@ -356,10 +362,7 @@ function InvoiceDialog({ id, onClose }: { id: string; onClose: (changed: boolean
 
         {detail.state === 'issued' ? (
           <div className="stack-sm">
-            <button type="button" className="btn btn-primary btn-block" onClick={copyAgain}>
-              <Icon name="copy" />
-              {t.copyAgain}
-            </button>
+            <PhoneThenInvoice stepKey={detail.id} phone={detail.phone} invoiceLabel={t.copyAgain} onCopyInvoice={copyAgain} />
             {(canVoid || (canRequest && !detail.voidRequestPending)) && !voidMode ? (
               <button type="button" className="btn btn-ghost btn-danger btn-block" onClick={() => setVoidMode(true)}>
                 <Icon name="ban" size={18} />

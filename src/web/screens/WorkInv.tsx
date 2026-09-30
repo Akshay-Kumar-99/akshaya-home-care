@@ -6,6 +6,7 @@ import { StepUpCancelled, useFeedback } from '../app/feedback.tsx';
 import { isOverdue, useQueue } from '../app/queue.tsx';
 import { useSession } from '../app/session.tsx';
 import { Icon } from '../components/Icon.tsx';
+import { PhoneThenInvoice } from '../components/CopyPhoneFirst.tsx';
 import { Chips, Combobox, Dialog, EmptyState, Field, Initials, MoneyInput, Skeleton } from '../components/ui.tsx';
 import { t } from '../i18n/en.ts';
 import { api, ApiError, isNetworkError } from '../lib/api.ts';
@@ -61,17 +62,19 @@ export function WorkInv() {
     pushState().then(setPush).catch(() => setPush('unsupported'));
   }, []);
 
-  function copy(card: QueueCard) {
+  /** The second tap (after Copy phone): issues the number if needed and copies the message. */
+  function copy(card: QueueCard): Promise<boolean> {
     const expect = card.state === 'submitted' ? 'submitted' : 'issued';
     // Start the clipboard write synchronously inside the tap (required on iOS and Android).
     const request = api<CopyResponse>(`/api/workinv/${card.id}/copy`, { method: 'POST', body: { expect } });
     const copied = copyWhenReady(request.then((r) => r.message));
     setBusyId(card.id);
-    request
+    return request
       .then(async (result) => {
         if (!(await copied)) showCopyFallback(result.message);
         toast({ text: t.copiedFor(formatInvoiceNumber(result.invoiceNumber), result.customerName), tone: 'ok', durationMs: 6000 });
         setPending((items) => items?.filter((i) => i.id !== card.id) ?? null);
+        return true;
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.code === 'already_copied') {
@@ -81,6 +84,7 @@ export function WorkInv() {
         } else {
           toast({ text: isNetworkError(err) ? t.offlineAction : t.somethingWrong, tone: 'error' });
         }
+        return false;
       })
       .finally(() => {
         setBusyId(null);
@@ -252,10 +256,14 @@ export function WorkInv() {
 
               {tab === 'pending' ? (
                 <div className="queue-actions">
-                  <button type="button" className="btn btn-primary btn-large btn-block" disabled={busyId === card.id} onClick={() => copy(card)}>
-                    <Icon name="copy" />
-                    {t.copyInvoice}
-                  </button>
+                  <PhoneThenInvoice
+                    stepKey={card.id}
+                    phone={card.phone}
+                    invoiceLabel={t.copyInvoice}
+                    onCopyInvoice={() => copy(card)}
+                    disabled={busyId === card.id}
+                    large
+                  />
                   {card.state === 'submitted' ? (
                     <div className="row">
                       {can('invoice.edit_pending') ? (
@@ -275,10 +283,13 @@ export function WorkInv() {
                 </div>
               ) : (
                 <div className="queue-actions">
-                  <button type="button" className="btn btn-primary btn-block" disabled={busyId === card.id} onClick={() => copy(card)}>
-                    <Icon name="copy" />
-                    {t.copyAgain}
-                  </button>
+                  <PhoneThenInvoice
+                    stepKey={card.id}
+                    phone={card.phone}
+                    invoiceLabel={t.copyAgain}
+                    onCopyInvoice={() => copy(card)}
+                    disabled={busyId === card.id}
+                  />
                   <button type="button" className="btn btn-ghost btn-block" disabled={busyId === card.id} onClick={() => void putBack(card)}>
                     <Icon name="undo" size={18} />
                     {t.putBack}

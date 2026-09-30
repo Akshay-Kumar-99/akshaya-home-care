@@ -16,7 +16,7 @@ Device / browser: ______________________ Date: __________ Tester: __________
 - [ ] Area and brand suggestions appear while typing; an unlisted value shows "Choose from the list".
 - [ ] Appliance chips and payment chips are easy to hit with a thumb (no mis-taps).
 - [ ] Spare cost higher than the total shows the confirm box; saving without ticking it is blocked.
-- [ ] "Save to Server" sits above the tab bar and is reachable one-handed.
+- [ ] The "Customer pays / Save to Server" bar sits at the end of the form, after Payment, and never floats over the fields while typing.
 - [ ] A full job takes **under 30 seconds** for a practised user. Time: ____ s
 - [ ] After saving: "Submitted. The office will send the invoice to the customer."
 - [ ] My Submissions shows Submitted, then "Issued · INV-…" after the office copies it, or "Rejected: reason".
@@ -41,14 +41,16 @@ Device / browser: ______________________ Date: __________ Tester: __________
 - [ ] Cards are oldest first; an item older than 4 hours has a red age badge and border.
 - [ ] Duplicate (same phone and same total within 24 h) and negative-margin flags show.
 - [ ] Message preview shows "(assigned on copy)" before copying.
+- [ ] **Copy phone** first: the 10-digit number (e.g. 9876543210) is copied; paste it in WhatsApp search and it finds the customer. The button then reads **Copy invoice**.
+- [ ] Go to WhatsApp and come back (even if the app reloads): the card still shows **Copy invoice**, with a "Copy phone again" link.
 - [ ] **Copy invoice**: paste into WhatsApp and check the text is exact (name, INV number, date dd/mm/yyyy, ₹ total with Indian commas, warranty line, phone).
 - [ ] After copying, a confirmation "INV-… for … copied. Paste it in WhatsApp." appears, with **no** chat pop-up or link.
 - [ ] Switch to WhatsApp, send, come back: the app has reloaded and the card is under "Recently copied".
-- [ ] Copy again and Put back in queue work from "Recently copied". There is no WhatsApp chat button anywhere in the app.
+- [ ] Copy again (Copy phone, then Copy again) and Put back in queue work from "Recently copied". There is no WhatsApp chat button anywhere in the app.
 - [ ] Edit a pending item's name (no PIN), then its total (asks for the PIN).
 - [ ] Reject needs a reason; the technician sees that reason.
 - [ ] Two phones tap Copy on the same item at the same moment: exactly one gets the number, the other sees "Already copied by … at …".
-- [ ] New Invoice → "Copy invoice" copies straight away and never appears in the queue.
+- [ ] New Invoice → "Copy phone" checks the form and copies the number; "Copy invoice" then creates and copies the invoice, which never appears in the queue.
 - [ ] All Invoices: search by name, phone and INV number; Request void sends a request.
 - [ ] Sound on: a new submission beeps while the app is open.
 - [ ] Work orders tab: New work order offers only "Invoice + Work" technicians, each with their open-job count. The job appears under Open as Assigned.

@@ -748,21 +748,24 @@ textarea:focus {
   gap: 14px;
 }
 
-/* The job form's action bar: total + main button, in the thumb zone above the tab bar. */
+/* The job form's action bar: total + main button. It sits at the end of the form, after
+   Payment, and never floats over the fields (owner, 30 Sep 2026). */
 .action-bar {
-  position: sticky;
-  bottom: calc(84px + env(safe-area-inset-bottom));
-  z-index: 15;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 10px 10px 16px;
   border-radius: 20px;
-  background: var(--glass);
+  background: var(--surface);
   border: 1px solid var(--line-strong);
-  box-shadow: var(--shadow-pop);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+}
+
+/* "Copy invoice" with the "Copy phone again" link under it. */
+.copy-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .action-total {
@@ -1745,10 +1748,6 @@ button.top-chip {
 
 .desk-content {
   padding: 18px 14px 48px;
-}
-
-.desk .action-bar {
-  bottom: 12px;
 }
 
 @media (min-width: 1024px) {

@@ -58,6 +58,14 @@ test.describe.serial('technician and admin technician on Android', () => {
     await expectNoHorizontalScroll(page);
     await page.screenshot(shots('04-work-inv-pending'));
 
+    // Two taps, in order: the phone number (for WhatsApp search), then the invoice.
+    await expect(card.getByRole('button', { name: 'Copy invoice' })).toHaveCount(0);
+    await card.getByRole('button', { name: 'Copy phone' }).click();
+    await expect(page.getByRole('status').filter({ hasText: `Phone ${phone} copied.` })).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(phone);
+    await page.screenshot(shots('05a-phone-copied'));
+    // Leaving for WhatsApp and coming back keeps the step.
+    await page.reload();
     await card.getByRole('button', { name: 'Copy invoice' }).click();
     const toast = page.getByRole('status').filter({ hasText: `for ${customer} copied. Paste it in WhatsApp.` });
     await expect(toast).toBeVisible();
@@ -126,6 +134,10 @@ test.describe.serial('technician and admin technician on Android', () => {
     await page.screenshot(shots('09-invoices-360'));
     await page.getByRole('button', { name: 'New Invoice' }).click();
     await expectNoHorizontalScroll(page);
+    // The action bar sits after the last field; it never floats over the form.
+    const bar = await page.locator('.action-bar').boundingBox();
+    const payment = await page.getByRole('radiogroup', { name: 'Payment' }).boundingBox();
+    expect(bar!.y).toBeGreaterThan(payment!.y + payment!.height);
     await page.screenshot(shots('10-new-invoice-360'));
     await page.getByRole('button', { name: 'Work orders' }).click();
     await expect(page.getByRole('heading', { name: 'Work orders' })).toBeVisible();
@@ -192,6 +204,7 @@ test.describe.serial('work allocation on Android', () => {
     await signIn(page, account('Admin Technician'));
     const card = page.locator('article', { hasText: customer });
     await expect(card.getByText('₹2,600.00', { exact: true })).toBeVisible();
+    await card.getByRole('button', { name: 'Copy phone' }).click();
     await card.getByRole('button', { name: 'Copy invoice' }).click();
     await expect(page.getByRole('status').filter({ hasText: `for ${customer} copied` })).toBeVisible();
     await page.getByRole('button', { name: 'Work orders' }).click();

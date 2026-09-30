@@ -4,6 +4,7 @@ import { formatInvoiceNumber } from '../../shared/invoice-template.ts';
 import { normalizeIndianMobile } from '../../shared/phone.ts';
 import { useFeedback } from '../app/feedback.tsx';
 import { useUser } from '../app/session.tsx';
+import { useCopyPhone, usePhoneStep } from '../components/CopyPhoneFirst.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { Chips, Combobox, Field, MoneyInput, Section, Skeleton } from '../components/ui.tsx';
 import { t } from '../i18n/en.ts';
@@ -108,8 +109,9 @@ function fromWork(work: WorkOrder): FormState {
  * mode "submit": technicians' "Save to Server" (offline-safe, goes to the Work Inv queue).
  *                With `work`, it completes that assigned work order instead: the customer and
  *                appliance come from the order, the technician fills in the work and amount.
- * mode "copy":   Master / Admin Technician "Copy invoice" for their own jobs: creates the
- *                invoice and copies the message; the user pastes it in WhatsApp themselves.
+ * mode "copy":   Master / Admin Technician's own jobs, in two taps: "Copy phone" copies the
+ *                customer's number (for WhatsApp search), then "Copy invoice" creates the
+ *                invoice and copies the message; the user pastes both in WhatsApp themselves.
  */
 export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?: WorkOrder; onDone?: () => void }) {
   const user = useUser();
@@ -122,8 +124,12 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
   // One key per job, kept across retries so the server never stores it twice.
   const keyRef = useRef<string>(crypto.randomUUID());
   const lookedUp = useRef<string | null>(null);
+  // Copy mode is two taps: the customer's phone first, then the invoice (owner, 30 Sep 2026).
+  const typedPhone = mode === 'copy' ? normalizeIndianMobile(form.phone) : null;
+  const phoneStep = usePhoneStep(typedPhone ? `form:${typedPhone}` : null);
+  const copyPhone = useCopyPhone();
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+  const set =<K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
     setErrors((e) => ({ ...e, [key]: undefined }));
   };
@@ -195,7 +201,14 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
     const full: SubmissionPayload = { ...payload, idempotencyKey: keyRef.current };
 
     if (mode === 'copy') {
-      // Start the clipboard write synchronously, inside the tap.
+      // Tap 1 copies the phone number, once the whole form is valid, so nothing is left to
+      // fix after coming back from WhatsApp.
+      if (!phoneStep.done) {
+        copyPhone(payload.phone);
+        phoneStep.markDone();
+        return;
+      }
+      // Tap 2: start the clipboard write synchronously, inside the tap.
       const request = api<CopyResponse>('/api/invoices/issue-own', { method: 'POST', body: full });
       const copied = copyWhenReady(request.then((r) => r.message));
       setBusy(true);
@@ -203,6 +216,7 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
         const result = await request;
         if (!(await copied)) showCopyFallback(result.message);
         toast({ text: t.copiedInvoice(formatInvoiceNumber(result.invoiceNumber)), tone: 'ok', durationMs: 6000 });
+        phoneStep.clear();
         reset();
       } catch (err) {
         if (!serverErrors(err)) toast({ text: isNetworkError(err) ? t.offlineAction : t.somethingWrong, tone: 'error' });
@@ -392,11 +406,23 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
           <span className="muted small">{t.customerPays}</span>
           <strong>{total !== null && total > 0 ? rupeesLabel(total) : '₹0'}</strong>
         </div>
-        <button type="submit" className="btn btn-primary btn-large grow" disabled={busy}>
-          <Icon name={mode === 'copy' ? 'copy' : work ? 'checkCircle' : 'cloud'} />
-          {mode === 'copy' ? t.copyInvoice : work ? t.completeWork : t.saveToServer}
-        </button>
+        {mode === 'copy' ? (
+          <button type="submit" className="btn btn-primary btn-large grow" disabled={busy}>
+            <Icon name={phoneStep.done ? 'copy' : 'phone'} />
+            {phoneStep.done ? t.copyInvoice : t.copyPhone}
+          </button>
+        ) : (
+          <button type="submit" className="btn btn-primary btn-large grow" disabled={busy}>
+            <Icon name={work ? 'checkCircle' : 'cloud'} />
+            {work ? t.completeWork : t.saveToServer}
+          </button>
+        )}
       </div>
+      {mode === 'copy' && phoneStep.done ? (
+        <button type="button" className="link-button" onClick={() => copyPhone(typedPhone ?? form.phone)}>
+          {t.copyPhoneAgain}
+        </button>
+      ) : null}
     </form>
   );
 }
