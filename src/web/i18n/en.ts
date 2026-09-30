@@ -88,7 +88,7 @@ export const en = {
   wrongPin: (left: number) => `Wrong PIN. ${left} attempt${left === 1 ? '' : 's'} left.`,
 
   // navigation
-  navNewJob: 'New Job',
+  navNewJob: 'New Invoice',
   navMySubmissions: 'My Submissions',
   navMySubmissionsShort: 'My Jobs',
   navWorkInv: 'Technician Work Inv',

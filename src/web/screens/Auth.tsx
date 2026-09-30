@@ -21,11 +21,10 @@ export function AuthFrame({ children }: { children: ReactNode }) {
         <ThemeToggle />
       </div>
       <header className="auth-brand">
-        <Logo size={56} />
-        <div>
-          <h1>{t.appName}</h1>
-          <p>{t.tagline}</p>
-        </div>
+        <Logo size={120} />
+        {/* The logo already shows the name; the heading stays for screen readers. */}
+        <h1 className="sr-only">{t.appName}</h1>
+        <p>{t.tagline}</p>
       </header>
       {children}
     </main>

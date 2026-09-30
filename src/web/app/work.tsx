@@ -8,6 +8,8 @@ import { api, isNetworkError } from '../lib/api.ts';
 // kept on the phone so jobs can be opened and completed offline (completion uses the outbox).
 
 const POLL_MS = 30_000;
+/** A failed reload (weak signal, server hiccup) is tried again this much later. */
+const RETRY_MS = 4_000;
 const cacheKey = (userId: string) => `ahc.work.v1.${userId}`;
 
 interface WorkApi {
@@ -17,6 +19,8 @@ interface WorkApi {
   /** true while showing the copy saved on the phone because the server can't be reached. */
   fromCache: boolean;
   reload: () => Promise<void>;
+  /** Shows a change on screen at once (e.g. after Start job), before the next reload. */
+  update: (id: string, changes: Partial<WorkOrder>) => void;
 }
 
 const WorkContext = createContext<WorkApi | null>(null);
@@ -55,17 +59,31 @@ export function WorkProvider({ userId, children }: { userId: string; children: R
   const [items, setItems] = useState<WorkOrder[] | null>(() => readCache(userId));
   const [fromCache, setFromCache] = useState(false);
   const version = useRef<number | null>(null);
+  // Only the newest reload may update the list: a slow, older reply must not overwrite it.
+  const latest = useRef(0);
+  const retry = useRef<number | undefined>(undefined);
 
   const reload = useCallback(async () => {
+    const seq = ++latest.current;
+    window.clearTimeout(retry.current);
     try {
       const res = await api<{ items: WorkOrder[] }>('/api/work/mine', { background: true });
+      if (seq !== latest.current) return;
       setItems(res.items);
       setFromCache(false);
       writeCache(userId, res.items);
     } catch (err) {
+      if (seq !== latest.current) return;
       if (isNetworkError(err)) setFromCache(true);
+      retry.current = window.setTimeout(() => void reload(), RETRY_MS);
     }
   }, [userId]);
+
+  useEffect(() => () => window.clearTimeout(retry.current), []);
+
+  const update = useCallback((id: string, changes: Partial<WorkOrder>) => {
+    setItems((list) => list?.map((w) => (w.id === id ? { ...w, ...changes } : w)) ?? list);
+  }, []);
 
   const poll = useCallback(() => {
     if (document.visibilityState !== 'visible') return;
@@ -95,7 +113,7 @@ export function WorkProvider({ userId, children }: { userId: string; children: R
   }, [poll]);
 
   const openCount = items ? items.filter(isOpenWork).length : 0;
-  return <WorkContext.Provider value={{ items, openCount, fromCache, reload }}>{children}</WorkContext.Provider>;
+  return <WorkContext.Provider value={{ items, openCount, fromCache, reload, update }}>{children}</WorkContext.Provider>;
 }
 
 export function useWork(): WorkApi {

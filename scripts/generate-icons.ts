@@ -1,137 +1,150 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { deflateSync } from 'node:zlib';
+import { chromium } from '@playwright/test';
 
-// Generates the PWA icons (a gold house on navy, the brand mark) as real PNG files,
-// with no image tooling needed. Run once: npm run icons. Output goes to src/web/public/icons/.
+// Builds every brand image from the owner's logo (assets/brand/akshaya-logo.jpg, gold rings and
+// black script on white). Run after changing the logo: npm run icons.
+// It uses the headless Chromium that Playwright already installs, so no image library is needed.
+//
+// Output (src/web/public/, served and cached for offline use):
+//   brand/logo-light.png  transparent, black lettering: for the light theme (3:2, cropped to the art)
+//   brand/logo-dark.png   transparent, white lettering, brighter gold: for the dark theme (3:2)
+//   icons/icon-192.png, icons/icon-512.png, icons/maskable-512.png, icons/apple-touch-icon.png,
+//   favicon.png           the logo on white, as the owner supplied it
 
-const WHITE = [0xfc, 0xa3, 0x11]; // the house: brand gold #FCA311
-const DOOR = [0x14, 0x21, 0x3d]; // door and window: navy #14213D
-// Diagonal gradient stops, matching the in-app Logo component.
-const STOPS: Array<[number, number[]]> = [
-  [0, [0x22, 0xd3, 0xee]],
-  [0.55, [0x02, 0x84, 0xc7]],
-  [1, [0x43, 0x38, 0xca]],
+const root = path.resolve(import.meta.dirname, '..');
+const source = readFileSync(path.join(root, 'assets/brand/akshaya-logo.jpg')).toString('base64');
+const out = path.join(root, 'src/web/public');
+
+interface Job {
+  file: string;
+  /** Output height; width is the same for icons and 1.5x for the logo images. */
+  size: number;
+  /** transparent: cut out the white; ink: recolour the black lettering; bg: fill colour. */
+  mode: { kind: 'transparent'; ink: 'dark' | 'light' } | { kind: 'solid'; bg: string; scale: number; round?: boolean };
+}
+
+const jobs: Job[] = [
+  { file: 'brand/logo-light.png', size: 240, mode: { kind: 'transparent', ink: 'dark' } },
+  { file: 'brand/logo-dark.png', size: 240, mode: { kind: 'transparent', ink: 'light' } },
+  { file: 'icons/icon-192.png', size: 192, mode: { kind: 'solid', bg: '#ffffff', scale: 0.96 } },
+  { file: 'icons/icon-512.png', size: 512, mode: { kind: 'solid', bg: '#ffffff', scale: 0.96 } },
+  // Maskable: launchers may crop to a circle of 80 % diameter; the whole logo stays inside it.
+  { file: 'icons/maskable-512.png', size: 512, mode: { kind: 'solid', bg: '#ffffff', scale: 0.78 } },
+  { file: 'icons/apple-touch-icon.png', size: 180, mode: { kind: 'solid', bg: '#ffffff', scale: 0.9 } },
+  { file: 'favicon.png', size: 64, mode: { kind: 'solid', bg: '#ffffff', scale: 1, round: true } },
 ];
 
-function gradientAt(u: number, v: number): number[] {
-  const t = Math.min(1, Math.max(0, (u + v) / 2));
-  for (let i = 1; i < STOPS.length; i++) {
-    const [t1, c1] = STOPS[i]!;
-    const [t0, c0] = STOPS[i - 1]!;
-    if (t <= t1) {
-      const k = (t - t0) / (t1 - t0);
-      return c0.map((c, j) => c + (c1[j]! - c) * k);
-    }
-  }
-  return STOPS[STOPS.length - 1]![1];
-}
+const browser = await chromium.launch();
+try {
+  const page = await browser.newPage();
+  const images: Record<string, string> = await page.evaluate(
+    async ({ src, jobs }) => {
+      const img = new Image();
+      img.src = `data:image/jpeg;base64,${src}`;
+      await img.decode();
+      const W = img.naturalWidth;
+      const H = img.naturalHeight;
+      const base = document.createElement('canvas');
+      base.width = W;
+      base.height = H;
+      const bctx = base.getContext('2d')!;
+      bctx.drawImage(img, 0, 0);
+      const pixels = bctx.getImageData(0, 0, W, H);
+      const d = pixels.data;
 
-const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-
-function crc32(buf: Buffer): number {
-  let c = 0xffffffff;
-  for (const byte of buf) c = CRC_TABLE[(c ^ byte) & 0xff]! ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-function chunk(type: string, data: Buffer): Buffer {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body));
-  return Buffer.concat([len, body, crc]);
-}
-
-function encodePng(size: number, rgba: Uint8Array): Buffer {
-  const raw = Buffer.alloc((size * 4 + 1) * size);
-  for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0; // filter: none
-    Buffer.from(rgba.buffer, y * size * 4, size * 4).copy(raw, y * (size * 4 + 1) + 1);
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // RGBA
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
-/** Coverage test in unit coordinates (0..1). Returns 'bg' | 'fg' | 'door' | null (transparent). */
-function sample(u: number, v: number, maskable: boolean): 'bg' | 'fg' | 'door' | null {
-  // Background: rounded square (standard) or full bleed (maskable).
-  if (!maskable) {
-    const r = 0.2;
-    const dx = Math.max(r - u, 0, u - (1 - r));
-    const dy = Math.max(r - v, 0, v - (1 - r));
-    if (dx * dx + dy * dy > r * r) return null;
-  }
-  // House artwork, scaled into the safe zone for maskable icons.
-  const scale = maskable ? 0.62 : 0.8;
-  const x = (u - 0.5) / scale + 0.5;
-  const y = (v - 0.5) / scale + 0.5;
-  // Roof: triangle apex (0.5, 0.14), base y = 0.48 from x 0.1 to 0.9.
-  const inRoof = y >= 0.14 && y <= 0.48 && Math.abs(x - 0.5) <= ((y - 0.14) / 0.34) * 0.4;
-  // Walls with a door cut out.
-  const inWalls = x >= 0.22 && x <= 0.78 && y >= 0.46 && y <= 0.86;
-  const inDoor = x >= 0.43 && x <= 0.57 && y >= 0.62 && y <= 0.86;
-  // Snowflake-ish window: a small square (AC / fridge nod).
-  const inWindow = x >= 0.28 && x <= 0.38 && y >= 0.54 && y <= 0.64;
-  if ((inRoof || inWalls) && (inDoor || inWindow)) return 'door';
-  if (inRoof || inWalls) return 'fg';
-  return 'bg';
-}
-
-function draw(size: number, maskable: boolean): Uint8Array {
-  const out = new Uint8Array(size * size * 4);
-  const ss = 4; // 4×4 supersampling for smooth edges
-  for (let py = 0; py < size; py++) {
-    for (let px = 0; px < size; px++) {
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 0;
-      for (let sy = 0; sy < ss; sy++) {
-        for (let sx = 0; sx < ss; sx++) {
-          const hit = sample((px + (sx + 0.5) / ss) / size, (py + (sy + 0.5) / ss) / size, maskable);
-          if (!hit) continue;
-          const c = hit === 'fg' ? WHITE : hit === 'door' ? DOOR : [0x14, 0x21, 0x3d];
-          r += c[0]!;
-          g += c[1]!;
-          b += c[2]!;
-          a += 1;
+      // "Colour to alpha" against white: keeps the soft edges of the script and the gold dust.
+      // A small floor removes JPEG noise in the white background.
+      const cut = new ImageData(W, H);
+      const c = cut.data;
+      let minX = W, minY = H, maxX = 0, maxY = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i]!, g = d[i + 1]!, b = d[i + 2]!;
+        let a = Math.max(255 - r, 255 - g, 255 - b) / 255;
+        a = Math.max(0, (a - 0.06) / 0.94);
+        if (a > 0) {
+          for (let k = 0; k < 3; k++) c[i + k] = Math.max(0, Math.min(255, (d[i + k]! - 255 * (1 - a)) / a));
+          c[i + 3] = Math.round(a * 255);
+        }
+        if (a > 0.15) {
+          const p = i / 4;
+          const x = p % W, y = Math.floor(p / W);
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
         }
       }
-      const i = (py * size + px) * 4;
-      const n = ss * ss;
-      out[i] = a ? Math.round(r / a) : 0;
-      out[i + 1] = a ? Math.round(g / a) : 0;
-      out[i + 2] = a ? Math.round(b / a) : 0;
-      out[i + 3] = Math.round((a / n) * 255);
-    }
-  }
-  return out;
-}
+      // Square crop around the artwork (icons), and a 3:2 crop (logo images: the script is
+      // wider than the rings, so a square would shrink it), both with a little breathing room.
+      const side = Math.round(Math.max(maxX - minX, maxY - minY) * 1.06);
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      const crop = { x: cx - side / 2, y: cy - side / 2, s: side };
+      const wideW = (maxX - minX) * 1.04;
+      const wideH = Math.max((maxY - minY) * 1.04, wideW / 1.5);
+      const wide = { x: cx - (wideH * 1.5) / 2, y: cy - wideH / 2, w: wideH * 1.5, h: wideH };
 
-const dir = path.resolve(import.meta.dirname, '../src/web/public/icons');
-mkdirSync(dir, { recursive: true });
-const icons: Array<[string, number, boolean]> = [
-  ['icon-192.png', 192, false],
-  ['icon-512.png', 512, false],
-  ['maskable-512.png', 512, true],
-  ['apple-touch-icon.png', 180, true],
-];
-for (const [name, size, maskable] of icons) {
-  writeFileSync(path.join(dir, name), encodePng(size, draw(size, maskable)));
-  console.log(`wrote icons/${name}`);
+      const canvasOf = (data: ImageData) => {
+        const cv = document.createElement('canvas');
+        cv.width = W;
+        cv.height = H;
+        cv.getContext('2d')!.putImageData(data, 0, 0);
+        return cv;
+      };
+      // Dark theme: grey/black ink becomes white; the gold is made brighter and more opaque so
+      // it glows on black instead of looking dull.
+      const light = new ImageData(new Uint8ClampedArray(c), W, H);
+      const l = light.data;
+      for (let i = 0; i < l.length; i += 4) {
+        if (l[i + 3] === 0) continue;
+        const r = l[i]!, g = l[i + 1]!, b = l[i + 2]!;
+        if (Math.max(r, g, b) - Math.min(r, g, b) < 70 && Math.max(r, g, b) < 170) {
+          l[i] = 245; l[i + 1] = 245; l[i + 2] = 245;
+        } else {
+          l[i] = Math.min(255, r * 1.15); l[i + 1] = Math.min(255, g * 1.15); l[i + 2] = Math.min(255, b * 1.15);
+          l[i + 3] = Math.min(255, l[i + 3]! * 1.7);
+        }
+      }
+      const cutDark = canvasOf(cut);
+      const cutLight = canvasOf(light);
+
+      const result: Record<string, string> = {};
+      for (const job of jobs) {
+        const cv = document.createElement('canvas');
+        cv.width = job.mode.kind === 'transparent' ? Math.round(job.size * 1.5) : job.size;
+        cv.height = job.size;
+        const ctx = cv.getContext('2d')!;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        if (job.mode.kind === 'transparent') {
+          const art = job.mode.ink === 'dark' ? cutDark : cutLight;
+          ctx.drawImage(art, wide.x, wide.y, wide.w, wide.h, 0, 0, cv.width, cv.height);
+        } else {
+          ctx.fillStyle = job.mode.bg;
+          if (job.mode.round) {
+            ctx.beginPath();
+            ctx.arc(job.size / 2, job.size / 2, job.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.fillRect(0, 0, job.size, job.size);
+          }
+          const s = job.size * job.mode.scale;
+          const o = (job.size - s) / 2;
+          ctx.drawImage(cutDark, crop.x, crop.y, crop.s, crop.s, o, o, s, s);
+        }
+        result[job.file] = cv.toDataURL('image/png');
+      }
+      return result;
+    },
+    { src: source, jobs },
+  );
+
+  for (const [file, dataUrl] of Object.entries(images)) {
+    const target = path.join(out, file);
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, Buffer.from(dataUrl.split(',')[1]!, 'base64'));
+    console.log(`wrote ${path.relative(root, target)}`);
+  }
+  // The old house mark.
+  rmSync(path.join(out, 'favicon.svg'), { force: true });
+} finally {
+  await browser.close();
 }

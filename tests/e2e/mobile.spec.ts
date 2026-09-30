@@ -23,7 +23,7 @@ test.describe.serial('technician and admin technician on Android', () => {
 
   test('technician signs in without a PIN and saves a job to the server', async ({ page }) => {
     await signIn(page, account('Technician 1'));
-    await expect(page.getByRole('heading', { name: 'New Job' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'New Invoice' })).toBeVisible();
     // "Invoice only": the same interface as before, no Works assigned tab.
     await expect(page.getByRole('button', { name: 'Works assigned' })).toHaveCount(0);
     await expectNoHorizontalScroll(page);
@@ -92,8 +92,8 @@ test.describe.serial('technician and admin technician on Android', () => {
 
   test('offline: the job is kept on the phone and sent when the connection returns', async ({ page, context }) => {
     await signIn(page, account('Technician 2'));
-    await page.getByRole('button', { name: 'New Job' }).click();
-    await expect(page.getByRole('heading', { name: 'New Job' })).toBeVisible();
+    await page.getByRole('button', { name: 'New Invoice' }).click();
+    await expect(page.getByRole('heading', { name: 'New Invoice' })).toBeVisible();
     const offlineName = `Offline ${uniquePhone().slice(-4)}`;
     await context.setOffline(true);
     await fillJob(page, { phone: uniquePhone(), name: offlineName, total: '1200', spare: '0' });
@@ -119,7 +119,7 @@ test.describe.serial('technician and admin technician on Android', () => {
     await page.getByLabel('New password (12+ characters)').fill('Kadalai-Mittai-2026');
     await page.getByLabel('Confirm new password').fill('Kadalai-Mittai-2026');
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByRole('heading', { name: 'New Job' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'New Invoice' })).toBeVisible();
   });
 
   test('works at 360 px wide with no sideways scrolling', async ({ page }) => {

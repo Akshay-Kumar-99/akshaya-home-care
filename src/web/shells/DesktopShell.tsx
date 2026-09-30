@@ -71,7 +71,7 @@ export default function DesktopShell() {
     <div className="desk">
       <aside className="rail" aria-label="Main">
         <span className="rail-logo" title={t.appName}>
-          <Logo size={40} />
+          <Logo size={44} />
         </span>
         <nav className="rail-nav">
           {NAV.map((n) => (

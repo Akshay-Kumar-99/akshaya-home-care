@@ -178,14 +178,17 @@ export function Icon({ name, size = 20, className }: { name: IconName; size?: nu
   );
 }
 
-/** Brand mark: a gold house on navy (the "Black and Gold Elegance" palette). */
-export function Logo({ size = 36 }: { size?: number }) {
+/**
+ * The company logo (owner's artwork, 30 Sep 2026): gold rings, script lettering, crossed tools.
+ * Two versions, built by `npm run icons`: white lettering for the dark theme, black for the
+ * light theme; CSS shows the one that matches. `size` is the height; the logo is 3:2.
+ */
+export function Logo({ size = 44 }: { size?: number }) {
+  const width = Math.round(size * 1.5);
   return (
-    <svg className="logo" width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" focusable="false">
-      <rect width="48" height="48" rx="14" fill="#14213d" />
-      <path d="M24 9 7 23h5v16h24V23h5L24 9Z" fill="#fca311" />
-      <rect x="21" y="28" width="6" height="11" rx="1" fill="#14213d" />
-      <rect x="14" y="25" width="5" height="5" rx="1" fill="#14213d" />
-    </svg>
+    <span className="logo" style={{ width, height: size }} aria-hidden="true">
+      <img className="logo-img logo-on-dark" src="/brand/logo-dark.png" width={width} height={size} alt="" decoding="async" />
+      <img className="logo-img logo-on-light" src="/brand/logo-light.png" width={width} height={size} alt="" decoding="async" />
+    </span>
   );
 }

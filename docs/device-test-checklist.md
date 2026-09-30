@@ -11,7 +11,7 @@ Device / browser: ______________________ Date: __________ Tester: __________
 ### Technician
 - [ ] Sign in with username and password only: no PIN page appears.
 - [ ] First sign-in forces a new password. No PIN is asked for.
-- [ ] New Job: the number keypad appears for phone, total and spare cost; letters keyboard for name.
+- [ ] New Invoice: the number keypad appears for phone, total and spare cost; letters keyboard for name.
 - [ ] Typing a known customer's 10-digit phone fills in the name and area.
 - [ ] Area and brand suggestions appear while typing; an unlisted value shows "Choose from the list".
 - [ ] Appliance chips and payment chips are easy to hit with a thumb (no mis-taps).
@@ -65,7 +65,7 @@ Device / browser: ______________________ Date: __________ Tester: __________
 - [ ] The notification text contains no customer name, phone or amount.
 
 ## C. iPhone Safari (secondary, best effort)
-- [ ] Sign in, New Job and My Submissions work; the layout fits under the notch and above the home bar.
+- [ ] Sign in, New Invoice and My Submissions work; the layout fits under the notch and above the home bar.
 - [ ] Copy message puts the text on the clipboard. If it doesn't, the "Copy the message" box appears with the text selectable.
 - [ ] "Add to Home Screen" works. Push alerts (iOS 16.4+) only work from the Home Screen app, after "Turn on alerts". Record the result: ______
 

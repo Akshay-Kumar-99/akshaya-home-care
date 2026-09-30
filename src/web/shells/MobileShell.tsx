@@ -149,7 +149,7 @@ function Frame(props: { tabs: Tab[]; current: string; offline: boolean; children
     <div className="mobile-shell">
       <header className="appbar">
         <div className="appbar-brand">
-          <Logo size={32} />
+          <Logo size={40} />
           <div className="appbar-text">
             <strong>{t.appShort}</strong>
             <span className="appbar-user">

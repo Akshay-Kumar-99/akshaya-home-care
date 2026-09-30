@@ -18,7 +18,7 @@ import { JobForm } from './JobForm.tsx';
  */
 export function WorksAssigned() {
   const user = useUser();
-  const { items, fromCache, reload } = useWork();
+  const { items, fromCache, reload, update } = useWork();
   const { toast } = useFeedback();
   const [completing, setCompleting] = useState<WorkOrder | null>(null);
   const [queuedJobs, setQueuedJobs] = useState<Set<string>>(new Set());
@@ -48,6 +48,7 @@ export function WorksAssigned() {
     setBusyId(work.id);
     try {
       await api(`/api/work/${work.id}/start`, { method: 'POST' });
+      update(work.id, { status: 'in_progress', startedAt: new Date().toISOString() });
       toast({ text: t.workStarted, tone: 'ok' });
     } catch (err) {
       const text = isNetworkError(err)

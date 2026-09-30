@@ -7,7 +7,7 @@ Written: 30 Sep 2026, after the owner's request of the same day.
 1. **Two-step sign-in.** Page 1 asks for username and password. The Master and Admin Technician then get a second page asking for their PIN. See [phase-3-auth.md](phase-3-auth.md).
 2. **A Team panel for the Master**, who is "the master of the whole". It can add, remove or change any user's name, username, password or PIN, including the Admin Technician's.
 3. **Two kinds of technician**, as a label the Master sets on each one:
-   - **Invoice only.** The same technician app as before: New Job and My Jobs.
+   - **Invoice only.** The same technician app as before: New Invoice and My Jobs.
    - **Invoice + Work allocation.** Also gets a **Works assigned** tab, where they see jobs the office assigned, start them, and complete them by creating the invoice.
 4. The Master creates both kinds. The Add user form will not create a technician until one of the two types is chosen.
 
@@ -44,7 +44,7 @@ Every change asks for the Master's PIN again if the last PIN entry was more than
 - **Call** dials the customer. **Start job** marks it In progress. **Complete & create invoice** opens the job form with the customer and appliance already filled in; the technician adds the brand, the work done, the amounts and the payment.
 - The invoice then waits in **Technician Work Inv** like any other job: no number until the office copies it.
 - If the office **rejects** that invoice, the job returns to the technician as In progress, showing "Sent back by the office: reason". They complete it again with corrected details. A rejected walk-in job (not a work order) is still cancelled, as before.
-- **Offline:** the last list is kept on the phone. Completing a job while offline stores it in the same outbox as New Job ("Not yet on server") and sends it when the connection returns. If the office re-assigned or cancelled the job in the meantime, the technician sees "This job was re-assigned or cancelled by the office."
+- **Offline:** the last list is kept on the phone. Completing a job while offline stores it in the same outbox as New Invoice ("Not yet on server") and sends it when the connection returns. If the office re-assigned or cancelled the job in the meantime, the technician sees "This job was re-assigned or cancelled by the office."
 
 ## Data and security
 

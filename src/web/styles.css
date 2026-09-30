@@ -1358,19 +1358,61 @@ details.preview[open] summary::before {
 
 .auth-brand {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
-}
-
-.auth-brand h1 {
-  font-size: 1.375rem;
-  font-weight: 800;
+  gap: 4px;
+  text-align: center;
 }
 
 .auth-brand p {
   color: var(--muted);
   font-size: 0.8125rem;
-  margin-top: 2px;
+}
+
+/* The company logo: the version that matches the theme (components/Icon.tsx Logo). */
+.logo {
+  display: inline-grid;
+  flex: none;
+}
+
+.logo-img {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.logo-on-light {
+  display: none;
+}
+
+:root[data-theme='light'] .logo-on-light {
+  display: block;
+}
+
+:root[data-theme='light'] .logo-on-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .logo-on-light {
+    display: block;
+  }
+  :root:not([data-theme]) .logo-on-dark {
+    display: none;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .auth-card {
