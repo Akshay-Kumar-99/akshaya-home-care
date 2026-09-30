@@ -1,6 +1,7 @@
 // Offline outbox for technician submissions. A job is written to the phone first, shown as
 // "Not yet on server", and sent (and re-sent) until the server confirms it. The client-made
 // idempotency key means a retry after a lost response never creates a second record.
+// Completing an assigned work order goes through the same outbox (with `workJobId`).
 
 export interface SubmissionPayload {
   idempotencyKey: string;
@@ -21,6 +22,8 @@ export interface OutboxItem {
   /** Only the user who created an item may send it (shared phones). */
   userId: string;
   payload: SubmissionPayload;
+  /** Set when this completes an assigned work order (Works assigned) instead of a walk-in job. */
+  workJobId?: string;
   /** Display-only snapshot so the list can show it while offline. */
   summary: { customerName: string; applianceLabel: string; totalRupees: number; spareCostRupees: number };
   createdAt: number;
@@ -39,7 +42,7 @@ export interface OutboxStore {
 /** What sending one item produced. */
 export type SendOutcome = 'sent' | 'rejected' | 'retry';
 
-export type Sender = (payload: SubmissionPayload) => Promise<SendOutcome>;
+export type Sender = (payload: SubmissionPayload, workJobId?: string) => Promise<SendOutcome>;
 
 export class Outbox {
   private readonly store: OutboxStore;
@@ -93,7 +96,7 @@ export class Outbox {
       if (item.status !== 'pending') continue;
       let outcome: SendOutcome;
       try {
-        outcome = await this.send(item.payload);
+        outcome = await this.send(item.payload, item.workJobId);
       } catch {
         outcome = 'retry';
       }

@@ -25,14 +25,17 @@ class IdbOutboxStore implements OutboxStore {
   }
 }
 
-async function sendSubmission(payload: SubmissionPayload): Promise<SendOutcome> {
+async function sendSubmission(payload: SubmissionPayload, workJobId?: string): Promise<SendOutcome> {
   try {
-    await api('/api/jobs', { method: 'POST', body: payload });
+    await api(workJobId ? `/api/work/${workJobId}/complete` : '/api/jobs', { method: 'POST', body: payload });
     return 'sent';
   } catch (err) {
-    // 422: the server refused the content. Anything else (offline, cold start, 5xx, signed
-    // out, PIN lock) is retried later without losing the job.
-    if (err instanceof ApiError && err.status === 422) return 'rejected';
+    // 422: the server refused the content. For a work order, 404 / 409 / forbidden mean the
+    // office re-assigned or cancelled it (or changed the technician's type). Anything else
+    // (offline, cold start, 5xx, signed out) is retried later without losing the job.
+    if (!(err instanceof ApiError)) return 'retry';
+    if (err.status === 422) return 'rejected';
+    if (workJobId && (err.status === 404 || err.status === 409 || err.code === 'forbidden')) return 'rejected';
     return 'retry';
   }
 }

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type pg from 'pg';
-import { roleUsesPin, type RoleKey } from '../../shared/constants.ts';
+import { roleUsesPin, type RoleKey, type TechnicianMode } from '../../shared/constants.ts';
 import type { SettingsCache } from '../services/settings.ts';
 
 export type SessionKind = 'mobile' | 'desktop';
@@ -20,6 +20,7 @@ export interface SessionUser {
   displayName: string;
   roleKey: RoleKey;
   mustChange: boolean;
+  technicianMode: TechnicianMode | null;
 }
 
 export interface SessionEntry {
@@ -49,6 +50,7 @@ interface SessionRow {
   display_name: string;
   role_key: RoleKey;
   must_change: boolean;
+  technician_mode: TechnicianMode | null;
   status: 'active' | 'disabled';
 }
 
@@ -148,7 +150,7 @@ export class SessionStore {
   private async load(tokenHash: string): Promise<SessionEntry | null> {
     const res = await this.pool.query<SessionRow>(
       `SELECT s.id, s.kind, s.absolute_expires_at, s.last_pin_at, s.last_seen_at, s.pin_fail_count,
-              s.revoked_at, u.id AS user_id, u.username, u.display_name, u.role_key, u.must_change, u.status
+              s.revoked_at, u.id AS user_id, u.username, u.display_name, u.role_key, u.must_change, u.technician_mode, u.status
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = $1`,
       [tokenHash],
@@ -166,6 +168,7 @@ export class SessionStore {
         displayName: row.display_name,
         roleKey: row.role_key,
         mustChange: row.must_change,
+        technicianMode: row.technician_mode,
       },
       absoluteExpiresAt: row.absolute_expires_at.getTime(),
       lastPinAt: row.last_pin_at.getTime(),

@@ -41,12 +41,20 @@ function FormMessage({ tone, children }: { tone: 'error' | 'ok'; children: React
   );
 }
 
+function lockoutMessage(err: ApiError): string {
+  return t.tooManyAttempts(Math.ceil(Number(err.body?.retryAfterSec ?? 60) / 60));
+}
+
+/**
+ * Two-step sign-in: username and password for everyone; the Master and Admin Technician then
+ * get a second page asking for their PIN. Technicians have no PIN and go straight in.
+ */
 export function LoginScreen() {
   const { setInfo } = useSession();
   const [mode, setMode] = useState<'login' | 'recover'>('login');
+  const [pinFor, setPinFor] = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -55,27 +63,35 @@ export function LoginScreen() {
     setBusy(true);
     setError(null);
     try {
-      const info = await api<SessionInfo>('/api/auth/login', {
+      const res = await api<SessionInfo | { pinRequired: true; displayName: string }>('/api/auth/login', {
         method: 'POST',
-        body: { username: username.trim(), password, pin, deviceKind: deviceKind() },
+        body: { username: username.trim(), password, deviceKind: deviceKind() },
       });
-      setInfo(info);
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'too_many_attempts') {
-        setError(t.tooManyAttempts(Math.ceil(Number(err.body?.retryAfterSec ?? 60) / 60)));
-      } else if (err instanceof ApiError && err.code === 'invalid_credentials') {
-        setError(t.invalidCredentials);
-      } else {
-        setError(err instanceof ApiError ? t.somethingWrong : t.serverUnreachable);
-      }
       setPassword('');
-      setPin('');
+      if ('pinRequired' in res) setPinFor(res.displayName);
+      else setInfo(res);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'too_many_attempts') setError(lockoutMessage(err));
+      else if (err instanceof ApiError && err.code === 'invalid_credentials') setError(t.invalidCredentials);
+      else setError(err instanceof ApiError ? t.somethingWrong : t.serverUnreachable);
+      setPassword('');
     } finally {
       setBusy(false);
     }
   }
 
   if (mode === 'recover') return <RecoverScreen onBack={() => setMode('login')} />;
+  if (pinFor !== null) {
+    return (
+      <PinStep
+        displayName={pinFor}
+        onBack={(message) => {
+          setPinFor(null);
+          setError(message);
+        }}
+      />
+    );
+  }
 
   return (
     <AuthFrame>
@@ -97,7 +113,49 @@ export function LoginScreen() {
         <Field label={t.password} icon="lock">
           <SecretInput autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </Field>
-        <Field label={t.pinOffice} hint={t.pinHintTechnician} icon="lock">
+        {error ? <FormMessage tone="error">{error}</FormMessage> : null}
+        <button type="submit" className="btn btn-primary btn-block btn-large" disabled={busy}>
+          {busy ? t.signingIn : t.signIn}
+        </button>
+        <button type="button" className="link-button" onClick={() => setMode('recover')}>
+          {t.forgotMaster}
+        </button>
+      </form>
+    </AuthFrame>
+  );
+}
+
+/** Sign-in step 2 for the Master and Admin Technician. */
+function PinStep({ displayName, onBack }: { displayName: string; onBack: (message: string | null) => void }) {
+  const { setInfo } = useSession();
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      setInfo(await api<SessionInfo>('/api/auth/login/pin', { method: 'POST', body: { pin } }));
+    } catch (err) {
+      setPin('');
+      setBusy(false);
+      if (!(err instanceof ApiError)) return setError(t.serverUnreachable);
+      if (err.code === 'invalid_pin') return setError(t.wrongPin(Number(err.body?.remainingAttempts ?? 0)));
+      // Locked out, or the page expired: start again from the password.
+      onBack(err.code === 'too_many_attempts' ? lockoutMessage(err) : t.pinExpired);
+    }
+  }
+
+  return (
+    <AuthFrame>
+      <form className="auth-card stack" onSubmit={submit}>
+        <div>
+          <h2>{t.pinStepTitle}</h2>
+          <p className="muted">{t.pinStepIntro(displayName)}</p>
+        </div>
+        <Field label={t.pinOffice} error={error} icon="lock">
           <SecretInput
             inputMode="numeric"
             pattern="[0-9]*"
@@ -105,14 +163,14 @@ export function LoginScreen() {
             maxLength={12}
             value={pin}
             onChange={(e) => setPin(digitsOnly(e.target.value))}
+            autoFocus
           />
         </Field>
-        {error ? <FormMessage tone="error">{error}</FormMessage> : null}
-        <button type="submit" className="btn btn-primary btn-block btn-large" disabled={busy}>
+        <button type="submit" className="btn btn-primary btn-block btn-large" disabled={busy || pin.length < 6}>
           {busy ? t.signingIn : t.signIn}
         </button>
-        <button type="button" className="link-button" onClick={() => setMode('recover')}>
-          {t.forgotMaster}
+        <button type="button" className="link-button" onClick={() => onBack(null)}>
+          {t.notYou}
         </button>
       </form>
     </AuthFrame>

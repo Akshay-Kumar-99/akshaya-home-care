@@ -4,9 +4,12 @@ Written: 29 Sep 2026.
 
 ## Decision summary
 
-- **Owner decision (29 Sep 2026): only the Master and Admin Technician have a PIN.** Technicians sign in with username and password only. They have no PIN at login, no idle PIN lock and no step-up (they have no sensitive actions). The login form keeps one optional PIN field ("office staff only"), which the server ignores for technicians. A two-step form would tell an attacker when a password is correct.
+- **Owner decision (29 Sep 2026): only the Master and Admin Technician have a PIN.** Technicians sign in with username and password only. They have no PIN at login, no idle PIN lock and no step-up (they have no sensitive actions).
 
-- **Login** sends username, password and PIN in one request. The PIN is verified only after the password succeeds. Every failure, including an unknown user, costs the same Argon2 work and returns the same generic message.
+- **Owner decision (30 Sep 2026): two-step sign-in.** Page 1 asks everyone for username and password. For the Master and Admin Technician a correct password opens page 2, which asks for the PIN; technicians go straight in. Every password failure, including an unknown user, costs the same Argon2 work and returns the same message ("Username or password is incorrect.").
+  - Between the steps the server holds a short-lived challenge: a random token in an `HttpOnly; SameSite=Strict` cookie (`__Host-ahc_pin` in production), stored only as a hash, valid for 5 minutes and 5 PIN tries ([auth/challenges.ts](../src/server/auth/challenges.ts)).
+  - A correct password for an office account records nothing as a success, so it cannot reset the lockout. Wrong PINs count toward the same per-account lockout as wrong passwords.
+  - **Trade-off (accepted by the owner):** reaching page 2 tells whoever typed it that the password was right. Guessing still has to get past the per-IP limit and the per-account lockout, and the PIN is a second factor with its own limits. In the one-form design this replaced, a wrong PIN and a wrong password looked the same.
 - **Sessions** are random 256-bit tokens. Only their SHA-256 hash is stored, in `HttpOnly; SameSite=Strict` cookies that are `__Host-`-prefixed and `Secure` in production. Mobile sessions last 30 days and desktop sessions 12 hours. The PIN idle lock (10 minutes, a setting) is enforced on the server.
 - **Access control** runs through one permission matrix ([src/server/rbac/policy.ts](../src/server/rbac/policy.ts)) that every route uses. Technicians get a second, Postgres-level layer: requests run as the restricted `ahc_technician_ctx` role, and row-level security (RLS) plus column privileges limit what they can see ([drizzle/0003_rls.sql](../drizzle/0003_rls.sql)).
 - **Zero-DB polls.** Background polls (`X-Ahc-Background: 1`) are validated from the in-process session cache. They touch no database, so Neon can scale to zero, and they don't count as activity, so a phone left open on a table still locks.
@@ -16,8 +19,8 @@ Written: 29 Sep 2026.
 | Control | Where | Behaviour |
 |---|---|---|
 | Password and PIN hashing | `auth/hashing.ts` | Argon2id (m=19 MiB, t=2, p=1). PINs are also keyed with `PIN_PEPPER`. |
-| PIN only after password | `auth/service.ts` `login` | Timing is equalised for unknown users and wrong passwords. |
-| Per-IP rate limit | `auth/rate-limit.ts` | 10 login or recovery attempts per IP per 5 minutes (in memory, single instance). |
+| PIN only after password | `auth/service.ts` `loginPassword`, `loginPin` | Timing is equalised for unknown users and wrong passwords. The PIN page needs the challenge from a correct password. |
+| Per-IP rate limit | `auth/rate-limit.ts` | 10 password or recovery attempts per IP per 5 minutes (in memory, single instance; `AUTH_IP_LIMIT` changes it). The PIN page is not counted: it already needs a correct password and allows 5 tries. |
 | Progressive lockout | `auth/service.ts` | After 5 consecutive failures the lock is 1 minute, then 2, 4 … up to a cap of 60, per username. Unknown usernames are locked the same way, so accounts can't be discovered this way. |
 | Idle PIN lock | `http/middleware.ts` `requireAuth` | Office roles only. After 10 minutes with no activity the API returns `401 pin_required` until `POST /api/auth/verify-pin`. Technician sessions never lock. |
 | Session PIN lockout | `auth/sessions.ts` | 5 wrong PINs on a session revoke it, forcing a full login. |
@@ -27,21 +30,22 @@ Written: 29 Sep 2026.
 | Session revocation | `SessionStore` | Changing credentials revokes the user's other sessions. A Master reset or disable revokes all of that user's sessions. |
 | Recovery without email | `/api/auth/recover` | The Master gets 10 single-use Argon2-hashed codes, shown once at the first credential change and replaceable by the Master (with step-up). `npm run emergency-reset` is the last resort. |
 | Login history | `GET /api/admin/login-history` | The Master sees every attempt, failures included. |
-| Audit | `audit_log` | Credential changes, resets, enable/disable, renames and session revocations are logged, with old and new values and never any secrets. |
+| Audit | `audit_log` | User creation, credential changes and resets, enable/disable, renames, technician-type changes and session revocations are logged, with old and new values and never any secrets. |
 
-## API (Phase 3)
+## API (Phase 3, updated 30 Sep 2026)
 
 | Method and path | Who | Notes |
 |---|---|---|
-| `POST /api/auth/login` | anyone | `{username, password, pin, deviceKind}` |
+| `POST /api/auth/login` | anyone | `{username, password, deviceKind}`. Technicians get the session. Office roles get `{pinRequired: true, displayName}` and the PIN-page cookie. |
+| `POST /api/auth/login/pin` | holder of a PIN-page cookie | `{pin}`. Errors: `401 invalid_pin` with `remainingAttempts`, `401 pin_challenge_expired`, `429 too_many_attempts`. |
 | `GET /api/auth/session` | anyone | `{authenticated, locked, mustChange, user, permissions, …}` |
 | `POST /api/auth/verify-pin` | session (even when locked) | `{pin, purpose: unlock \| step_up}` |
 | `POST /api/auth/change-credentials` | session | `{currentPassword, newPassword, newPin}`. The Master receives `recoveryCodes` once. |
 | `POST /api/auth/logout` | session | |
 | `POST /api/auth/recover` | anyone (Master username) | `{username, recoveryCode, newPassword, newPin}` |
 | `POST /api/auth/recovery-codes` | Master + step-up | Replaces the codes and returns the new ones once. |
-| `GET /api/admin/users`, `GET /api/admin/users/:id/sessions` | Master | |
-| `POST /api/admin/users/:id/{reset-credentials,disable,enable,revoke-sessions}`, `PATCH /api/admin/users/:id` | Master + step-up | |
+| `GET /api/admin/users`, `GET /api/admin/users/:id/sessions` | Master | The Team panel. See [work-allocation-and-team.md](work-allocation-and-team.md). |
+| `POST /api/admin/users`, `PATCH /api/admin/users/:id`, `POST /api/admin/users/:id/{credentials,reset-credentials,disable,enable,revoke-sessions}` | Master + step-up | |
 | `GET /api/admin/login-history` | Master | |
 
 ## Honest limits
@@ -59,4 +63,4 @@ Written: 29 Sep 2026.
 - [ASSUMPTION] Step-up is valid for 5 minutes.
 - [ASSUMPTION] 5 wrong PINs on a session revoke it.
 - [ASSUMPTION] Technicians can look up any customer by phone, to auto-fill name and area as the spec requires. They can't see other technicians' jobs or invoices.
-- [ASSUMPTION] User-management endpoints ship now; the admin screens come in Phase 5.
+- [ASSUMPTION] The PIN page stays valid for 5 minutes and allows 5 tries before the user must start again with the password.

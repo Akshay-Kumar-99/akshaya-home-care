@@ -57,6 +57,8 @@ export default defineConfig({
       // Same pepper the e2e setup hashes PINs with (tests/integration/helpers.ts TEST_PEPPER).
       PIN_PEPPER: Buffer.alloc(32, 7).toString('base64'),
       TRUST_PROXY: 'false',
+      // Every test signs in from the same address; production keeps the default of 10.
+      AUTH_IP_LIMIT: '1000',
     },
   },
 });

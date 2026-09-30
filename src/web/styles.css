@@ -2563,6 +2563,153 @@ button.top-chip {
   max-width: 28rem;
 }
 
+/* ================================================================ work allocation and team */
+
+.list-heading {
+  margin: 10px 2px 0;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Work order cards carry a status stripe, like My Submissions. */
+.work-card {
+  position: relative;
+  overflow: hidden;
+  padding-left: 20px;
+  --status: var(--line-strong);
+}
+
+.work-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--status);
+}
+
+.work-assigned {
+  --status: var(--cyan);
+}
+
+.work-in_progress {
+  --status: var(--info);
+}
+
+.work-completed {
+  --status: var(--mint);
+}
+
+.work-cancelled {
+  opacity: 0.8;
+}
+
+/* The "Invoice + Work allocation" label. */
+.pill-gold {
+  background: var(--chip-on-bg);
+  color: var(--cyan);
+  border-color: transparent;
+}
+
+.team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.team-card-off {
+  opacity: 0.75;
+}
+
+.team-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.secret-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.secret-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+input.mono {
+  letter-spacing: 0.04em;
+}
+
+.has-icon select {
+  padding-left: 44px;
+}
+
+/* One-time credentials card after creating a user or setting a password / PIN. */
+.cred-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--input);
+  border: 1px solid var(--line);
+}
+
+.cred-list dt {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.cred-list dd {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.table-static tbody tr {
+  cursor: default;
+}
+
+.table .when {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A neutral checkbox row (the amber .confirm-box is for warnings). */
+.check-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.check-row input {
+  width: 22px;
+  min-height: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: var(--grad);
+}
+
 /* ================================================================ small phones, motion */
 
 @media (max-width: 380px) {

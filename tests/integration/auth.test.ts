@@ -59,21 +59,73 @@ describe.skipIf(!hasTestDatabase)('authentication and authorization (Neon test b
   });
 
   describe('login', () => {
-    it('gives the same generic answer for a bad password, a bad PIN and an unknown user', async () => {
+    it('gives the same generic answer for a bad password and an unknown user', async () => {
       const tech = byName('Technician 1');
       const office = byName('Admin Technician');
       const client = new TestClient(app, '198.51.100.1');
       const badPassword = await client.login({ ...tech, password: 'wrong-password-123' });
-      const badPin = await client.login({ ...office, pin: office.pin === '482913' ? '591824' : '482913' });
-      const unknown = await client.login({ username: 'nobody-here', password: 'x'.repeat(14), pin: '482913' });
-      for (const res of [badPassword, badPin, unknown]) {
+      const badOfficePassword = await client.login({ ...office, password: 'wrong-password-123' });
+      const unknown = await client.login({ username: 'nobody-here', password: 'x'.repeat(14) });
+      for (const res of [badPassword, badOfficePassword, unknown]) {
         expect(res.status).toBe(401);
         expect(res.json).toEqual({
           error: 'invalid_credentials',
-          message: 'Username, password or PIN is incorrect.',
+          message: 'Username or password is incorrect.',
         });
       }
       expect(client.cookies.size).toBe(0);
+    });
+
+    it('asks the Master and Admin Technician for the PIN on a second page', async () => {
+      const office = byName('Admin Technician');
+      const client = new TestClient(app, '198.51.100.2');
+      const step1 = await client.loginPassword(office);
+      expect(step1.status).toBe(200);
+      expect(step1.json).toEqual({ pinRequired: true, displayName: office.displayName });
+      // No session yet: only the short-lived, HttpOnly PIN-page cookie.
+      const challenge = step1.headers.getSetCookie().find((c) => c.startsWith('ahc_pin='))!;
+      expect(challenge).toMatch(/HttpOnly/i);
+      expect(challenge).toMatch(/SameSite=Strict/i);
+      expect(client.cookies.has('ahc_session')).toBe(false);
+      expect((await client.get('/api/auth/session')).json).toEqual({ authenticated: false });
+
+      const wrong = await client.post('/api/auth/login/pin', { pin: office.pin === '482913' ? '591824' : '482913' });
+      expect(wrong.status).toBe(401);
+      expect(wrong.json).toEqual({ error: 'invalid_pin', remainingAttempts: 4 });
+
+      const ok = await client.post('/api/auth/login/pin', { pin: office.pin });
+      expect(ok.status).toBe(200);
+      expect(ok.json.pinEnabled).toBe(true);
+      expect(ok.json.user.role).toBe('admin_technician');
+      expect(client.cookies.has('ahc_session')).toBe(true);
+      expect(client.cookies.has('ahc_pin')).toBe(false);
+    });
+
+    it('refuses the PIN page without a fresh challenge, and each challenge works once', async () => {
+      const office = byName('Admin Technician');
+      const none = await new TestClient(app).post('/api/auth/login/pin', { pin: office.pin });
+      expect(none.json).toEqual({ error: 'pin_challenge_expired' });
+
+      const client = new TestClient(app);
+      await client.loginPassword(office);
+      const challenge = client.cookies.get('ahc_pin')!;
+      expect((await client.post('/api/auth/login/pin', { pin: office.pin })).status).toBe(200);
+      const replay = new TestClient(app);
+      replay.cookies.set('ahc_pin', challenge);
+      expect((await replay.post('/api/auth/login/pin', { pin: office.pin })).json).toEqual({
+        error: 'pin_challenge_expired',
+      });
+    });
+
+    it('expires the PIN page after 5 minutes', async () => {
+      const office = byName('Admin Technician');
+      const client = new TestClient(app);
+      await client.loginPassword(office);
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(Date.now() + 6 * 60_000);
+      expect((await client.post('/api/auth/login/pin', { pin: office.pin })).json).toEqual({
+        error: 'pin_challenge_expired',
+      });
     });
 
     it('sets an HttpOnly, SameSite=Strict session cookie and a readable CSRF cookie', async () => {
@@ -152,12 +204,11 @@ describe.skipIf(!hasTestDatabase)('authentication and authorization (Neon test b
       expect(junkPin.status).toBe(200);
     });
 
-    it('still requires the PIN for office roles', async () => {
-      const office = byName('Admin Technician');
-      const res = await new TestClient(app).login({ username: office.username, password: office.password });
-      expect(res.status).toBe(401);
-      const ok = await new TestClient(app).login(office);
-      expect(ok.json.pinEnabled).toBe(true);
+    it('never asks a technician for a PIN', async () => {
+      const tech = byName('Technician 3');
+      const res = await new TestClient(app).loginPassword(tech);
+      expect(res.json.pinRequired).toBeUndefined();
+      expect(res.json.authenticated).toBe(true);
     });
 
     it('never idle-locks a technician session, and has no PIN to verify', async () => {
@@ -190,7 +241,7 @@ describe.skipIf(!hasTestDatabase)('authentication and authorization (Neon test b
 
     it('locks unknown usernames the same way (no account enumeration)', async () => {
       const client = new TestClient(app, '198.51.100.4');
-      const ghost = { username: 'ghost-user', password: 'x'.repeat(14), pin: '482913' };
+      const ghost = { username: 'ghost-user', password: 'x'.repeat(14) };
       for (let i = 0; i < 5; i++) expect((await client.login(ghost)).status).toBe(401);
       expect((await client.login(ghost)).status).toBe(429);
     });
@@ -198,7 +249,7 @@ describe.skipIf(!hasTestDatabase)('authentication and authorization (Neon test b
     it('rate-limits login attempts per IP', async () => {
       const limitedApp = buildTestApp(pool, { limiter: new SlidingWindowLimiter(3, 60_000) }).app;
       const client = new TestClient(limitedApp, '198.51.100.5');
-      const ghost = { username: 'ip-limit-probe', password: 'x'.repeat(14), pin: '482913' };
+      const ghost = { username: 'ip-limit-probe', password: 'x'.repeat(14) };
       for (let i = 0; i < 3; i++) expect((await client.login(ghost)).status).toBe(401);
       expect((await client.login(ghost)).status).toBe(429);
     });

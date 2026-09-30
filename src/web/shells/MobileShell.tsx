@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { useQueue } from '../app/queue.tsx';
 import { useSession, useUser } from '../app/session.tsx';
+import { useWork, WorkProvider } from '../app/work.tsx';
 import { Icon, Logo, type IconName } from '../components/Icon.tsx';
 import { Skeleton, ThemeToggle } from '../components/ui.tsx';
 import { t } from '../i18n/en.ts';
@@ -9,9 +10,12 @@ import { navigate, usePath } from '../lib/router.ts';
 import { JobForm } from '../screens/JobForm.tsx';
 import { MySubmissions } from '../screens/MySubmissions.tsx';
 
-// Checker-only screens load on demand, so technicians never download them.
+// Screens not every user needs load on demand: Invoice-only technicians never download the
+// Works assigned screen, and technicians never download the checker screens.
 const WorkInv = lazy(() => import('../screens/WorkInv.tsx').then((m) => ({ default: m.WorkInv })));
 const Invoices = lazy(() => import('../screens/Invoices.tsx').then((m) => ({ default: m.Invoices })));
+const WorkOrders = lazy(() => import('../screens/WorkOrders.tsx').then((m) => ({ default: m.WorkOrders })));
+const WorksAssigned = lazy(() => import('../screens/WorksAssigned.tsx').then((m) => ({ default: m.WorksAssigned })));
 
 interface Tab {
   path: string;
@@ -27,8 +31,10 @@ const TECHNICIAN_TABS: Tab[] = [
 
 function useCheckerTabs(): Tab[] {
   const { snapshot } = useQueue();
+  const { can } = useSession();
   return [
     { path: '/work-inv', label: t.navWorkInvShort, icon: 'inbox', badge: snapshot?.pendingCount },
+    ...(can('work.assign') ? [{ path: '/work-orders', label: t.navWorkOrders, icon: 'clipboard' as const }] : []),
     { path: '/new-invoice', label: t.navNewInvoice, icon: 'plus' },
     { path: '/invoices', label: t.navInvoicesShort, icon: 'receipt' },
   ];
@@ -42,7 +48,6 @@ export default function MobileShell({ offline }: { offline: boolean }) {
 
 function TechnicianShell({ offline }: { offline: boolean }) {
   const info = useUser();
-  const path = usePath();
 
   // Keep sending queued jobs: on start, when back online, on return to the app, and every 30 s.
   useEffect(() => {
@@ -59,13 +64,37 @@ function TechnicianShell({ offline }: { offline: boolean }) {
     };
   }, [info.user.id]);
 
-  const current = TECHNICIAN_TABS.some((tab) => tab.path === path) ? path : '/new-job';
+  // "Invoice + Work allocation" technicians also get the Works assigned tab (first).
+  if (info.permissions.includes('work.do')) {
+    return (
+      <WorkProvider userId={info.user.id}>
+        <WorkTechnicianTabs offline={offline} />
+      </WorkProvider>
+    );
+  }
+  return <TechnicianTabs tabs={TECHNICIAN_TABS} offline={offline} />;
+}
+
+function WorkTechnicianTabs({ offline }: { offline: boolean }) {
+  const { openCount } = useWork();
+  const tabs: Tab[] = [{ path: '/works', label: t.navWorksAssigned, icon: 'clipboard', badge: openCount }, ...TECHNICIAN_TABS];
+  return <TechnicianTabs tabs={tabs} offline={offline} />;
+}
+
+function TechnicianTabs({ tabs, offline }: { tabs: Tab[]; offline: boolean }) {
+  const path = usePath();
+  const current = tabs.some((tab) => tab.path === path) ? path : tabs[0]!.path;
   useEffect(() => {
     if (current !== path) navigate(current, true);
   }, [current, path]);
 
   return (
-    <Frame tabs={TECHNICIAN_TABS} current={current} offline={offline}>
+    <Frame tabs={tabs} current={current} offline={offline}>
+      {current === '/works' ? (
+        <Suspense fallback={<Skeleton lines={8} />}>
+          <WorksAssigned />
+        </Suspense>
+      ) : null}
       {current === '/new-job' ? (
         <section className="page">
           <header className="page-head">
@@ -76,9 +105,8 @@ function TechnicianShell({ offline }: { offline: boolean }) {
           </header>
           <JobForm mode="submit" />
         </section>
-      ) : (
-        <MySubmissions offline={offline} />
-      )}
+      ) : null}
+      {current === '/my-submissions' ? <MySubmissions offline={offline} /> : null}
     </Frame>
   );
 }
@@ -95,6 +123,7 @@ function CheckerMobileShell() {
     <Frame tabs={tabs} current={current} offline={false}>
       <Suspense fallback={<Skeleton lines={8} />}>
         {current === '/work-inv' ? <WorkInv /> : null}
+        {current === '/work-orders' ? <WorkOrders /> : null}
         {current === '/new-invoice' ? (
           <section className="page">
             <header className="page-head">
@@ -115,6 +144,7 @@ function CheckerMobileShell() {
 function Frame(props: { tabs: Tab[]; current: string; offline: boolean; children: ReactNode }) {
   const info = useUser();
   const { logout } = useSession();
+  const label = info.user.technicianMode === 'invoice_and_work' ? t.technicianMode.invoice_and_work : t.roleLabel[info.user.role];
   return (
     <div className="mobile-shell">
       <header className="appbar">
@@ -124,7 +154,7 @@ function Frame(props: { tabs: Tab[]; current: string; offline: boolean; children
             <strong>{t.appShort}</strong>
             <span className="appbar-user">
               {info.user.displayName}
-              {info.user.displayName !== t.roleLabel[info.user.role] ? ` · ${t.roleLabel[info.user.role]}` : ''}
+              {info.user.displayName !== label ? ` · ${label}` : ''}
             </span>
           </div>
         </div>

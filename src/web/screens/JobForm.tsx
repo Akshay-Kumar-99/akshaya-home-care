@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import type { CopyResponse, LookupsResponse } from '../../shared/api-types.ts';
+import type { CopyResponse, LookupsResponse, WorkOrder } from '../../shared/api-types.ts';
 import { formatInvoiceNumber } from '../../shared/invoice-template.ts';
 import { normalizeIndianMobile } from '../../shared/phone.ts';
 import { useFeedback } from '../app/feedback.tsx';
@@ -9,7 +9,7 @@ import { Chips, Combobox, Field, MoneyInput, Section, Skeleton } from '../compon
 import { t } from '../i18n/en.ts';
 import { api, ApiError, isNetworkError } from '../lib/api.ts';
 import { copyWhenReady } from '../lib/clipboard.ts';
-import { rupeesLabel } from '../lib/format.ts';
+import { dateTimeIst, formatPhoneForDisplay, rupeesLabel } from '../lib/format.ts';
 import { useLookups } from '../lib/lookups.ts';
 import { outbox } from '../lib/outbox-idb.ts';
 import type { SubmissionPayload } from '../lib/outbox.ts';
@@ -92,17 +92,30 @@ function validate(form: FormState, lookups: LookupsResponse): { errors: Errors; 
   };
 }
 
+function fromWork(work: WorkOrder): FormState {
+  return {
+    ...EMPTY,
+    phone: work.phone,
+    customerName: work.customerName,
+    area: work.area ?? '',
+    applianceTypeKey: work.applianceTypeKey,
+    brand: work.brand ?? '',
+  };
+}
+
 /**
  * The fast-entry job form (target: under 30 seconds on a phone).
  * mode "submit": technicians' "Save to Server" (offline-safe, goes to the Work Inv queue).
+ *                With `work`, it completes that assigned work order instead: the customer and
+ *                appliance come from the order, the technician fills in the work and amount.
  * mode "copy":   Master / Admin Technician "Copy invoice" for their own jobs: creates the
  *                invoice and copies the message; the user pastes it in WhatsApp themselves.
  */
-export function JobForm({ mode }: { mode: 'submit' | 'copy' }) {
+export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?: WorkOrder; onDone?: () => void }) {
   const user = useUser();
   const lookups = useLookups();
   const { toast, showCopyFallback } = useFeedback();
-  const [form, setForm] = useState<FormState>(EMPTY);
+  const [form, setForm] = useState<FormState>(() => (work ? fromWork(work) : EMPTY));
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
   const [knownCustomer, setKnownCustomer] = useState(false);
@@ -118,7 +131,7 @@ export function JobForm({ mode }: { mode: 'submit' | 'copy' }) {
   // Repeat customer: a known phone fills in name and area.
   useEffect(() => {
     const phone = normalizeIndianMobile(form.phone);
-    if (!phone || phone === lookedUp.current || !navigator.onLine) return;
+    if (work || !phone || phone === lookedUp.current || !navigator.onLine) return;
     lookedUp.current = phone;
     api<{ found: boolean; name?: string; areaId?: string | null }>(`/api/lookups/customer?phone=${encodeURIComponent(phone)}`)
       .then((res) => {
@@ -132,7 +145,7 @@ export function JobForm({ mode }: { mode: 'submit' | 'copy' }) {
         setKnownCustomer(true);
       })
       .catch(() => {});
-  }, [form.phone, lookups]);
+  }, [form.phone, lookups, work]);
 
   const total = toRupees(form.total);
   const spare = form.spare.trim() === '' ? 0 : toRupees(form.spare);
@@ -206,6 +219,7 @@ export function JobForm({ mode }: { mode: 'submit' | 'copy' }) {
         key: full.idempotencyKey,
         userId: user.user.id,
         payload: full,
+        workJobId: work?.id,
         summary: {
           customerName: full.customerName,
           applianceLabel: appliance,
@@ -217,15 +231,22 @@ export function JobForm({ mode }: { mode: 'submit' | 'copy' }) {
         await outbox.discard(full.idempotencyKey);
         // Re-send directly to get the field errors to show.
         try {
-          await api('/api/jobs', { method: 'POST', body: full });
+          await api(work ? `/api/work/${work.id}/complete` : '/api/jobs', { method: 'POST', body: full });
         } catch (err) {
           if (serverErrors(err)) return;
+          if (work) {
+            toast({ text: t.workGone, tone: 'error' });
+            onDone?.();
+            return;
+          }
         }
         toast({ text: t.fixAndResubmit, tone: 'error' });
         return;
       }
-      toast({ text: outcome === 'sent' ? t.submitted : t.savedOffline, tone: outcome === 'sent' ? 'ok' : 'info', durationMs: 6000 });
-      reset();
+      const sentText = work ? t.workCompleted : t.submitted;
+      toast({ text: outcome === 'sent' ? sentText : t.savedOffline, tone: outcome === 'sent' ? 'ok' : 'info', durationMs: 6000 });
+      if (work) onDone?.();
+      else reset();
     } finally {
       setBusy(false);
     }
@@ -233,6 +254,38 @@ export function JobForm({ mode }: { mode: 'submit' | 'copy' }) {
 
   return (
     <form className="job-form" onSubmit={submit} noValidate>
+      {work ? (
+        <Section title={t.sectionCustomer} icon="user">
+          <ul className="meta">
+            <li>
+              <Icon name="user" size={16} />
+              <span>
+                <strong>{work.customerName}</strong> · <a href={`tel:${work.phone}`}>{formatPhoneForDisplay(work.phone)}</a>
+              </span>
+            </li>
+            {work.address || work.area ? (
+              <li>
+                <Icon name="pin" size={16} />
+                <span>{[work.address, work.area].filter(Boolean).join(', ')}</span>
+              </li>
+            ) : null}
+            <li>
+              <Icon name="wrench" size={16} />
+              <span>
+                {work.appliance}
+                {work.complaint ? ` · ${work.complaint}` : ''}
+              </span>
+            </li>
+            {work.scheduledAt ? (
+              <li>
+                <Icon name="clock" size={16} />
+                <span>{t.visitAt(dateTimeIst(work.scheduledAt))}</span>
+              </li>
+            ) : null}
+          </ul>
+        </Section>
+      ) : null}
+      {work ? null : (
       <Section title={t.sectionCustomer} icon="user">
         <Field label={t.phone} error={errors.phone} hint={knownCustomer ? t.knownCustomer : undefined} icon="phone">
           <input
@@ -257,15 +310,18 @@ export function JobForm({ mode }: { mode: 'submit' | 'copy' }) {
           error={errors.area}
         />
       </Section>
+      )}
 
       <Section title={t.sectionJob} icon="wrench">
-        <Chips
-          label={t.appliance}
-          options={applianceOptions}
-          value={form.applianceTypeKey}
-          onChange={(v) => set('applianceTypeKey', v)}
-          error={errors.applianceTypeKey}
-        />
+        {work ? null : (
+          <Chips
+            label={t.appliance}
+            options={applianceOptions}
+            value={form.applianceTypeKey}
+            onChange={(v) => set('applianceTypeKey', v)}
+            error={errors.applianceTypeKey}
+          />
+        )}
         <Combobox
           label={t.brand}
           placeholder={t.brandPlaceholder}
@@ -337,8 +393,8 @@ export function JobForm({ mode }: { mode: 'submit' | 'copy' }) {
           <strong>{total !== null && total > 0 ? rupeesLabel(total) : '₹0'}</strong>
         </div>
         <button type="submit" className="btn btn-primary btn-large grow" disabled={busy}>
-          <Icon name={mode === 'copy' ? 'copy' : 'cloud'} />
-          {mode === 'copy' ? t.copyInvoice : t.saveToServer}
+          <Icon name={mode === 'copy' ? 'copy' : work ? 'checkCircle' : 'cloud'} />
+          {mode === 'copy' ? t.copyInvoice : work ? t.completeWork : t.saveToServer}
         </button>
       </div>
     </form>

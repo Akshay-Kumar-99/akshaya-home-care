@@ -6,10 +6,11 @@ import {
   type PasswordProblem,
   type PinProblem,
 } from '../../shared/credentials.ts';
-import { roleUsesPin, type RoleKey } from '../../shared/constants.ts';
+import { roleUsesPin, type RoleKey, type TechnicianMode } from '../../shared/constants.ts';
 import { withTransaction } from '../db/client.ts';
 import { hash, verify } from '@node-rs/argon2';
 import { hashPassword, hashPin, verifyPassword, verifyPin } from './hashing.ts';
+import type { PinChallengeStore } from './challenges.ts';
 import type { SessionEntry, SessionKind, SessionStore, SessionUser } from './sessions.ts';
 
 export interface AuthDeps {
@@ -80,17 +81,11 @@ async function recordAttempt(
 // ------------------------------------------------------------------ timing equalisation
 
 let dummyPasswordHash: Promise<string> | null = null;
-let dummyPinHash: Promise<string> | null = null;
 
-/** Burns the same Argon2 work as a real check so response time does not reveal which step failed. */
+/** Burns the same Argon2 work as a real check, so unknown usernames can't be told apart by timing. */
 async function burnPassword(password: string): Promise<void> {
   dummyPasswordHash ??= hashPassword('dummy-password-for-timing-equalisation');
   await verifyPassword(await dummyPasswordHash, password);
-}
-
-async function burnPin(pin: string, pepper: Uint8Array): Promise<void> {
-  dummyPinHash ??= hashPin('000000', pepper);
-  await verifyPin(await dummyPinHash, pin, pepper);
 }
 
 // ------------------------------------------------------------------ login
@@ -101,6 +96,7 @@ interface CredentialRow {
   display_name: string;
   role_key: RoleKey;
   must_change: boolean;
+  technician_mode: TechnicianMode | null;
   status: 'active' | 'disabled';
   password_hash: string | null;
   pin_hash: string | null;
@@ -112,7 +108,7 @@ async function loadUserWithCredentials(
 ): Promise<CredentialRow | null> {
   const byKey = 'key' in where;
   const res = await db.query<CredentialRow>(
-    `SELECT u.id, u.username, u.display_name, u.role_key, u.must_change, u.status,
+    `SELECT u.id, u.username, u.display_name, u.role_key, u.must_change, u.technician_mode, u.status,
             (SELECT secret_hash FROM auth_credentials
               WHERE user_id = u.id AND factor_type = 'password' AND revoked_at IS NULL) AS password_hash,
             (SELECT secret_hash FROM auth_credentials
@@ -131,6 +127,7 @@ function toSessionUser(row: CredentialRow): SessionUser {
     displayName: row.display_name,
     roleKey: row.role_key,
     mustChange: row.must_change,
+    technicianMode: row.technician_mode,
   };
 }
 
@@ -139,18 +136,48 @@ export type LoginResult =
   | { ok: false; reason: 'invalid' }
   | { ok: false; reason: 'locked'; retryAfterSec: number };
 
-export async function login(
+/** Step 1 result: a session (technicians) or a PIN challenge (office roles). */
+export type PasswordStepResult =
+  | LoginResult
+  | { ok: 'pin_required'; challengeToken: string; displayName: string };
+
+async function openSession(
   deps: AuthDeps,
+  user: CredentialRow,
+  meta: { key: string; stage: 'password' | 'pin'; kind: SessionKind; ip: string | null; userAgent: string | null; deviceLabel: string | null },
+): Promise<{ token: string; entry: SessionEntry }> {
+  return withTransaction(deps.pool, async (client) => {
+    await recordAttempt(client, { key: meta.key, userId: user.id, ip: meta.ip, stage: meta.stage, success: true });
+    await client.query(
+      `UPDATE auth_credentials SET last_used_at = now()
+       WHERE user_id = $1 AND revoked_at IS NULL AND factor_type IN ('password', 'pin')`,
+      [user.id],
+    );
+    return deps.sessions.create(client, toSessionUser(user), meta.kind, {
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+      deviceLabel: meta.deviceLabel,
+    });
+  });
+}
+
+/**
+ * Sign-in step 1: username + password (owner decision, Sep 2026: the PIN is a second page).
+ * Technicians get a session straight away. Office roles get a short-lived PIN challenge.
+ * For them nothing is recorded as a "success" yet, so a known password can never reset the
+ * lockout counter that wrong PINs build up.
+ */
+export async function loginPassword(
+  deps: AuthDeps & { challenges: PinChallengeStore },
   input: {
     username: string;
     password: string;
-    pin: string;
     kind: SessionKind;
     ip: string | null;
     userAgent: string | null;
     deviceLabel: string | null;
   },
-): Promise<LoginResult> {
+): Promise<PasswordStepResult> {
   const key = usernameKey(input.username);
   const lockedSec = await lockedForSeconds(deps.pool, key);
   if (lockedSec > 0) {
@@ -160,14 +187,12 @@ export async function login(
 
   const user = await loadUserWithCredentials(deps.pool, { key });
   const needsPin = !!user && roleUsesPin(user.role_key);
-  const usable =
-    user && user.status === 'active' && user.password_hash && (!needsPin || user.pin_hash);
+  const usable = user && user.status === 'active' && user.password_hash && (!needsPin || user.pin_hash);
 
-  // Step 1: password. Unknown or disabled users burn the same work.
+  // Unknown or disabled users burn the same Argon2 work, so timing reveals nothing.
   const passwordOk = usable ? await verifyPassword(user.password_hash!, input.password) : false;
   if (!usable) await burnPassword(input.password);
   if (!passwordOk || !user) {
-    await burnPin(input.pin, deps.pepper);
     await recordAttempt(deps.pool, {
       key,
       userId: user?.id ?? null,
@@ -179,38 +204,76 @@ export async function login(
     return { ok: false, reason: 'invalid' };
   }
 
-  // Step 2: PIN, only after the password succeeded, and only for roles that have one.
-  // Technicians have no PIN; the same Argon2 work is burned so timing reveals nothing.
-  if (needsPin) {
-    const pinOk = await verifyPin(user.pin_hash!, input.pin, deps.pepper);
-    if (!pinOk) {
-      await recordAttempt(deps.pool, { key, userId: user.id, ip: input.ip, stage: 'pin', success: false, reason: 'bad_pin' });
-      return { ok: false, reason: 'invalid' };
-    }
-  } else {
-    await burnPin(input.pin, deps.pepper);
+  if (!needsPin) {
+    return { ok: true, ...(await openSession(deps, user, { key, stage: 'password', ...input })) };
   }
 
-  const created = await withTransaction(deps.pool, async (client) => {
-    await recordAttempt(client, {
-      key,
-      userId: user.id,
-      ip: input.ip,
-      stage: needsPin ? 'pin' : 'password',
-      success: true,
-    });
-    await client.query(
-      `UPDATE auth_credentials SET last_used_at = now()
-       WHERE user_id = $1 AND revoked_at IS NULL AND factor_type IN ('password', 'pin')`,
-      [user.id],
-    );
-    return deps.sessions.create(client, toSessionUser(user), input.kind, {
-      ip: input.ip,
-      userAgent: input.userAgent,
-      deviceLabel: input.deviceLabel,
-    });
+  const challengeToken = deps.challenges.create({
+    userId: user.id,
+    usernameKey: key,
+    displayName: user.display_name,
+    kind: input.kind,
+    ip: input.ip,
+    userAgent: input.userAgent,
+    deviceLabel: input.deviceLabel,
   });
-  return { ok: true, ...created };
+  return { ok: 'pin_required', challengeToken, displayName: user.display_name };
+}
+
+export type PinStepResult =
+  | { ok: true; token: string; entry: SessionEntry }
+  | { ok: false; reason: 'expired' }
+  | { ok: false; reason: 'locked'; retryAfterSec: number }
+  | { ok: false; reason: 'invalid_pin'; remaining: number };
+
+/** Sign-in step 2 (office roles): the PIN answers the challenge from step 1. */
+export async function loginPin(
+  deps: AuthDeps & { challenges: PinChallengeStore },
+  challengeToken: string | undefined,
+  pin: string,
+  ip: string | null,
+): Promise<PinStepResult> {
+  const challenge = deps.challenges.get(challengeToken);
+  if (!challenge || !challengeToken) return { ok: false, reason: 'expired' };
+
+  const lockedSec = await lockedForSeconds(deps.pool, challenge.usernameKey);
+  if (lockedSec > 0) {
+    deps.challenges.delete(challengeToken);
+    return { ok: false, reason: 'locked', retryAfterSec: lockedSec };
+  }
+
+  const user = await loadUserWithCredentials(deps.pool, { userId: challenge.userId });
+  const ok = !!user?.pin_hash && user.status === 'active' && (await verifyPin(user.pin_hash, pin, deps.pepper));
+  if (!ok || !user) {
+    await recordAttempt(deps.pool, {
+      key: challenge.usernameKey,
+      userId: challenge.userId,
+      ip,
+      stage: 'pin',
+      success: false,
+      reason: 'bad_pin',
+    });
+    const remaining = deps.challenges.fail(challengeToken);
+    const nowLocked = await lockedForSeconds(deps.pool, challenge.usernameKey);
+    if (nowLocked > 0) {
+      deps.challenges.delete(challengeToken);
+      return { ok: false, reason: 'locked', retryAfterSec: nowLocked };
+    }
+    return { ok: false, reason: 'invalid_pin', remaining };
+  }
+
+  deps.challenges.delete(challengeToken);
+  return {
+    ok: true,
+    ...(await openSession(deps, user, {
+      key: challenge.usernameKey,
+      stage: 'pin',
+      kind: challenge.kind,
+      ip,
+      userAgent: challenge.userAgent,
+      deviceLabel: challenge.deviceLabel,
+    })),
+  };
 }
 
 // ------------------------------------------------------------------ session PIN (unlock / step-up)

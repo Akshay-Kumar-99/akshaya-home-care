@@ -188,10 +188,11 @@ async function createAccounts(client: pg.PoolClient, options: SeedOptions): Prom
     const password = isMaster ? masterInitialPassword : generatePassword();
     const pin = isMaster ? masterInitialPin : roleUsesPin(plan.role) ? generatePin() : undefined;
 
+    // Seeded technicians start as "Invoice only"; the Master can switch them in the Team panel.
     const user = await client.query<{ id: string }>(
-      `INSERT INTO users (username, display_name, role_key, must_change)
-       VALUES ($1, $2, $3, true) RETURNING id`,
-      [username, plan.displayName, plan.role],
+      `INSERT INTO users (username, display_name, role_key, technician_mode, must_change)
+       VALUES ($1, $2, $3, $4, true) RETURNING id`,
+      [username, plan.displayName, plan.role, plan.role === 'technician' ? 'invoice_only' : null],
     );
     const userId = user.rows[0]!.id;
     await client.query(

@@ -1,30 +1,23 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
+import { CreateUserSchema, SetCredentialsSchema, UpdateUserSchema } from '../../shared/schemas.ts';
 import type { AppEnv } from '../http/context.ts';
 import { requireAuth, requirePermission, requireRecentPin } from '../http/middleware.ts';
 import {
+  createUser,
   listActiveSessions,
   listUsers,
   loginHistory,
-  renameUser,
   resetUserCredentials,
   revokeUserSessions,
+  setUserCredentials,
   setUserStatus,
+  updateUser,
   type AdminResult,
 } from '../services/users.ts';
 
 const IdParam = z.uuid();
 const ReasonBody = z.object({ reason: z.string().trim().min(1).max(300) });
-const RenameBody = z
-  .object({
-    displayName: z.string().trim().min(1).max(60).optional(),
-    username: z
-      .string()
-      .trim()
-      .regex(/^[a-z0-9][a-z0-9._-]{2,31}$/i, 'letters, digits, dot, dash or underscore; 3–32 chars')
-      .optional(),
-  })
-  .refine((v) => v.displayName !== undefined || v.username !== undefined, 'nothing to change');
 const HistoryQuery = z.object({
   userId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -40,13 +33,16 @@ async function body<T extends z.ZodType>(c: Context<AppEnv>, schema: T): Promise
   return parsed.success ? parsed.data : null;
 }
 
+const BAD_INPUT = new Set(['invalid', 'pin_not_applicable', 'not_a_technician', 'password_length',
+  'password_contains_username', 'password_repetitive', 'pin_format', 'pin_weak']);
+
 function respond<T extends object>(c: Context<AppEnv>, result: AdminResult<T>) {
   if (result.ok) return c.json(result);
-  const status = result.error === 'not_found' ? 404 : result.error === 'invalid' ? 400 : 409;
+  const status = result.error === 'not_found' ? 404 : BAD_INPUT.has(result.error) ? 400 : 409;
   return c.json({ error: result.error }, status);
 }
 
-// Master-only administration. Reads need the permission; every change also needs a fresh PIN.
+// Master-only team management. Reads need the permission; every change also needs a fresh PIN.
 export const adminRoutes = new Hono<AppEnv>()
   .use('*', requireAuth())
 
@@ -54,10 +50,37 @@ export const adminRoutes = new Hono<AppEnv>()
     c.json({ users: await listUsers(c.get('deps').pool) }),
   )
 
+  .post('/users', requirePermission('users.manage'), requireRecentPin(), async (c) => {
+    const input = await body(c, CreateUserSchema);
+    if (!input) return c.json({ error: 'invalid_request' }, 400);
+    const deps = c.get('deps');
+    return respond(c, await createUser(deps.pool, deps.pepper, c.get('auth').actor, input));
+  })
+
   .get('/users/:id/sessions', requirePermission('users.manage'), async (c) => {
     const id = targetId(c);
     if (!id) return c.json({ error: 'not_found' }, 404);
     return c.json({ sessions: await listActiveSessions(c.get('deps').pool, id) });
+  })
+
+  .patch('/users/:id', requirePermission('users.manage'), requireRecentPin(), async (c) => {
+    const id = targetId(c);
+    const input = await body(c, UpdateUserSchema);
+    if (!id) return c.json({ error: 'not_found' }, 404);
+    if (!input) return c.json({ error: 'invalid_request' }, 400);
+    const deps = c.get('deps');
+    const result = await updateUser(deps.pool, deps.sessions, c.get('auth').actor, id, input);
+    if (result.ok && input.technicianMode) deps.work.changed(id);
+    return respond(c, result);
+  })
+
+  .post('/users/:id/credentials', requirePermission('users.manage'), requireRecentPin(), async (c) => {
+    const id = targetId(c);
+    const input = await body(c, SetCredentialsSchema);
+    if (!id) return c.json({ error: 'not_found' }, 404);
+    if (!input) return c.json({ error: 'invalid_request' }, 400);
+    const deps = c.get('deps');
+    return respond(c, await setUserCredentials(deps.pool, deps.sessions, deps.pepper, c.get('auth').actor, id, input));
   })
 
   .post('/users/:id/reset-credentials', requirePermission('users.manage'), requireRecentPin(), async (c) => {
@@ -84,15 +107,6 @@ export const adminRoutes = new Hono<AppEnv>()
     if (!input) return c.json({ error: 'invalid_request' }, 400);
     const deps = c.get('deps');
     return respond(c, await setUserStatus(deps.pool, deps.sessions, c.get('auth').actor, id, 'active', input.reason));
-  })
-
-  .patch('/users/:id', requirePermission('users.manage'), requireRecentPin(), async (c) => {
-    const id = targetId(c);
-    const input = await body(c, RenameBody);
-    if (!id) return c.json({ error: 'not_found' }, 404);
-    if (!input) return c.json({ error: 'invalid_request' }, 400);
-    const deps = c.get('deps');
-    return respond(c, await renameUser(deps.pool, deps.sessions, c.get('auth').actor, id, input));
   })
 
   .post('/users/:id/revoke-sessions', requirePermission('users.manage'), requireRecentPin(), async (c) => {

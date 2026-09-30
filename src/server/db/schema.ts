@@ -37,6 +37,8 @@ export const documentType = pgEnum('document_type', ['invoice']);
 export const voidRequestStatus = pgEnum('void_request_status', ['pending', 'approved', 'rejected']);
 export const paymentMode = pgEnum('payment_mode', ['cash', 'upi', 'other']);
 export const messageAction = pgEnum('message_action', ['issue', 'copy', 'recopy', 'requeue', 'open_chat']);
+/** Technician label (owner, Sep 2026): invoice-only, or invoice + assigned work orders. */
+export const technicianMode = pgEnum('technician_mode', ['invoice_only', 'invoice_and_work']);
 
 // ---------------------------------------------------------------- identity and auth
 
@@ -57,11 +59,16 @@ export const users = pgTable(
       .references(() => roles.key),
     status: userStatus('status').notNull().default('active'),
     mustChange: boolean('must_change').notNull().default(true),
+    /** Technicians only: 'invoice_only' or 'invoice_and_work' (gets the Works assigned tab). */
+    technicianMode: technicianMode('technician_mode'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
   },
-  (t) => [uniqueIndex('users_username_lower_uq').on(sql`lower(${t.username})`)],
+  (t) => [
+    uniqueIndex('users_username_lower_uq').on(sql`lower(${t.username})`),
+    check('users_technician_mode_ck', sql`(${t.roleKey} = 'technician') = (${t.technicianMode} is not null)`),
+  ],
 );
 
 /** Pluggable authentication factors: the PIN can later become TOTP or a passkey with no schema change. */
@@ -219,12 +226,21 @@ export const jobs = pgTable(
       .references(() => applianceTypes.key),
     brandId: uuid('brand_id').references(() => brands.id),
     areaId: uuid('area_id').references(() => areas.id),
-    serviceDescription: text('service_description').notNull(),
+    /** What was done. Filled at completion; a work order starts without it. */
+    serviceDescription: text('service_description'),
     status: jobStatus('status').notNull().default('new'),
-    // Roadmap columns (work allocation). Unused in the current scope.
+    // Work allocation: a work order is created and assigned by the Master / Admin Technician.
+    complaint: text('complaint'),
+    visitAddress: text('visit_address'),
     assignedTo: uuid('assigned_to').references(() => users.id),
+    assignedBy: uuid('assigned_by').references(() => users.id),
+    assignedAt: timestamp('assigned_at', { withTimezone: true }),
     scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    cancelReason: text('cancel_reason'),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     source: recordSource('source').notNull().default('app'),
     createdBy: uuid('created_by').references(() => users.id),
     createdAt: createdAt(),
@@ -232,7 +248,11 @@ export const jobs = pgTable(
   },
   (t) => [
     index('jobs_customer_appliance_idx').on(t.customerId, t.applianceTypeKey, t.completedAt),
+    index('jobs_assigned_idx').on(t.assignedTo, t.status, t.scheduledAt),
     check('jobs_completed_at_ck', sql`${t.status} <> 'completed' or ${t.completedAt} is not null`),
+    check('jobs_completed_service_ck', sql`${t.status} <> 'completed' or ${t.serviceDescription} is not null`),
+    check('jobs_assigned_ck', sql`${t.status} not in ('assigned', 'in_progress') or ${t.assignedTo} is not null`),
+    check('jobs_cancelled_ck', sql`${t.status} <> 'cancelled' or ${t.cancelledAt} is not null or ${t.assignedTo} is null`),
   ],
 );
 

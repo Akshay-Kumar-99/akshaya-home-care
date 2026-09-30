@@ -79,7 +79,8 @@ export const workInvRoutes = new Hono<AppEnv>()
     const result = await reject(deps.pool, c.get('auth').actor, id, body.reason);
     if (!result.ok) return c.json({ error: result.error }, result.error === 'not_found' ? 404 : 409);
     deps.queue.changed();
-    return c.json({ ok: true });
+    deps.work.changed(result.returnedTo);
+    return c.json({ ok: true, returnedToTechnician: result.returnedTo !== null });
   })
 
   // Edit a pending item. Amount changes need a fresh PIN (step-up).

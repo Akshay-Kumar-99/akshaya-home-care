@@ -12,6 +12,8 @@ const Dashboard = lazy(() => import('../screens/Dashboard.tsx').then((m) => ({ d
 const WorkInv = lazy(() => import('../screens/WorkInv.tsx').then((m) => ({ default: m.WorkInv })));
 const Invoices = lazy(() => import('../screens/Invoices.tsx').then((m) => ({ default: m.Invoices })));
 const VoidRequests = lazy(() => import('../screens/Invoices.tsx').then((m) => ({ default: m.VoidRequests })));
+const WorkOrders = lazy(() => import('../screens/WorkOrders.tsx').then((m) => ({ default: m.WorkOrders })));
+const Team = lazy(() => import('../screens/Team.tsx').then((m) => ({ default: m.Team })));
 
 const NAV: Array<{ path: string; label: string; icon: IconName; key: string }> = [
   { path: '/dashboard', label: t.navDashboard, icon: 'grid', key: '1' },
@@ -19,12 +21,14 @@ const NAV: Array<{ path: string; label: string; icon: IconName; key: string }> =
   { path: '/new-invoice', label: t.navNewInvoice, icon: 'plus', key: '3' },
   { path: '/invoices', label: t.navInvoices, icon: 'receipt', key: '4' },
   { path: '/void-requests', label: t.navVoidRequests, icon: 'ban', key: '5' },
+  { path: '/work-orders', label: t.navWorkOrders, icon: 'clipboard', key: '6' },
+  { path: '/team', label: t.navTeam, icon: 'users', key: '7' },
 ];
 
 /**
  * Master's desktop shell (1366×768 and up): a slim icon rail on the left, a top bar with
  * live status chips, invoice search and the signed-in user. Collapses to a top row on narrow
- * screens so nothing breaks if opened on a phone. Alt+1…5 switch sections; "/" focuses search.
+ * screens so nothing breaks if opened on a phone. Alt+1…7 switch sections; "/" focuses search.
  */
 export default function DesktopShell() {
   const info = useUser();
@@ -148,6 +152,8 @@ export default function DesktopShell() {
             ) : null}
             {current === '/invoices' ? <Invoices key={search} initialQuery={new URLSearchParams(search).get('q') ?? ''} /> : null}
             {current === '/void-requests' ? <VoidRequests /> : null}
+            {current === '/work-orders' ? <WorkOrders /> : null}
+            {current === '/team' ? <Team /> : null}
           </Suspense>
         </main>
       </div>

@@ -6,6 +6,7 @@ import { isWeakPin } from '../../src/shared/credentials.ts';
 import { SubmissionInputSchema, type SubmissionInputRaw } from '../../src/shared/schemas.ts';
 import { generatePassword, generatePin } from '../../src/server/auth/hashing.ts';
 import { createApp } from '../../src/server/app.ts';
+import { PinChallengeStore } from '../../src/server/auth/challenges.ts';
 import { SlidingWindowLimiter } from '../../src/server/auth/rate-limit.ts';
 import { SessionStore } from '../../src/server/auth/sessions.ts';
 import { createPool } from '../../src/server/db/client.ts';
@@ -14,6 +15,7 @@ import { LookupsCache } from '../../src/server/services/lookups.ts';
 import { PushService } from '../../src/server/services/push.ts';
 import { QueueState } from '../../src/server/services/queue-state.ts';
 import { SettingsCache } from '../../src/server/services/settings.ts';
+import { WorkState } from '../../src/server/services/work-state.ts';
 import { runMigrations } from '../../src/server/db/migrate.ts';
 import { runSeed } from '../../src/server/db/seed.ts';
 import type { Actor } from '../../src/server/services/types.ts';
@@ -94,6 +96,8 @@ export function buildTestApp(pool: pg.Pool, options: { limiter?: SlidingWindowLi
     sessions: new SessionStore(pool, settings),
     lookups: new LookupsCache(pool),
     queue: new QueueState(pool),
+    work: new WorkState(),
+    challenges: new PinChallengeStore(),
     push: new PushService(pool, null),
     pepper: TEST_PEPPER,
     secureCookies: false,
@@ -156,13 +160,16 @@ export class TestClient {
     return this.request('POST', path, body, headers);
   }
 
-  login(account: { username: string; password: string; pin?: string | undefined }, deviceKind: 'mobile' | 'desktop' = 'mobile') {
-    return this.post('/api/auth/login', {
-      username: account.username,
-      password: account.password,
-      pin: account.pin,
-      deviceKind,
-    });
+  /** Step 1 only: username + password. Office roles get `{ pinRequired: true }`. */
+  loginPassword(account: { username: string; password: string }, deviceKind: 'mobile' | 'desktop' = 'mobile') {
+    return this.post('/api/auth/login', { username: account.username, password: account.password, deviceKind });
+  }
+
+  /** Full sign-in as the app does it: password, then the PIN page for the Master / Admin Technician. */
+  async login(account: { username: string; password: string; pin?: string | undefined }, deviceKind: 'mobile' | 'desktop' = 'mobile') {
+    const first = await this.loginPassword(account, deviceKind);
+    if (first.status !== 200 || !first.json?.pinRequired) return first;
+    return this.post('/api/auth/login/pin', { pin: account.pin ?? '' });
   }
 }
 

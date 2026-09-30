@@ -1,4 +1,4 @@
-# Device test checklist (Phase 4)
+# Device test checklist (Phase 4, updated 30 Sep 2026)
 
 Run on real devices before go-live and after any change to the job form, Work Inv or clipboard code. Tick every box, and note the phone model and browser version at the top.
 
@@ -9,7 +9,7 @@ Device / browser: ______________________ Date: __________ Tester: __________
 ## A. Android Chrome (mid-range phone, PRIMARY)
 
 ### Technician
-- [ ] Sign in with username and password only (PIN field left empty).
+- [ ] Sign in with username and password only: no PIN page appears.
 - [ ] First sign-in forces a new password. No PIN is asked for.
 - [ ] New Job: the number keypad appears for phone, total and spare cost; letters keyboard for name.
 - [ ] Typing a known customer's 10-digit phone fills in the name and area.
@@ -25,8 +25,17 @@ Device / browser: ______________________ Date: __________ Tester: __________
 - [ ] Offline (airplane mode): saving shows "Saved on this phone…". My Submissions shows "Not yet on server". Turning airplane mode off sends it within about 30 s, without opening the app again, and it never appears twice.
 - [ ] Close the app completely while a job is "Not yet on server", reopen it with a connection, and the job is sent.
 
+### Technician labelled "Invoice + Work allocation"
+- [ ] The first tab is **Works assigned**; its badge shows the number of open jobs. An "Invoice only" technician has no such tab.
+- [ ] A job assigned from the office appears within about 30 seconds while the app is open.
+- [ ] Call dials the customer. Start job changes it to In progress.
+- [ ] Complete & create invoice shows the customer, address and complaint, and asks only for the brand, work done, amounts and payment.
+- [ ] After completing: "Job completed. The office will send the invoice." The job moves to "Done recently" as Submitted, then Issued · INV-… after the office copies it.
+- [ ] If the office rejects it, the job comes back as In progress with "Sent back by the office: reason".
+- [ ] Offline: the list is still there; completing a job shows "Not yet on server" and it is sent when back online.
+
 ### Admin Technician (checker)
-- [ ] Sign in with username, password and PIN.
+- [ ] Sign in: username and password, then the PIN page. "Not you? Start again" goes back. A wrong PIN says how many tries are left.
 - [ ] After 10 minutes idle, reopening asks for the PIN; 5 wrong PINs sign out.
 - [ ] Work Inv badge count on the tab bar matches the pending list.
 - [ ] Cards are oldest first; an item older than 4 hours has a red age badge and border.
@@ -42,6 +51,8 @@ Device / browser: ______________________ Date: __________ Tester: __________
 - [ ] New Invoice → "Copy invoice" copies straight away and never appears in the queue.
 - [ ] All Invoices: search by name, phone and INV number; Request void sends a request.
 - [ ] Sound on: a new submission beeps while the app is open.
+- [ ] Work orders tab: New work order offers only "Invoice + Work" technicians, each with their open-job count. The job appears under Open as Assigned.
+- [ ] Re-assign / reschedule and Cancel job (with a reason) work; the technician's list updates.
 
 ## B. Installed Android app (PWA)
 - [ ] Chrome menu → "Install app" / "Add to Home screen" gives the house icon with no white box around it.
@@ -57,13 +68,17 @@ Device / browser: ______________________ Date: __________ Tester: __________
 - [ ] "Add to Home Screen" works. Push alerts (iOS 16.4+) only work from the Home Screen app, after "Turn on alerts". Record the result: ______
 
 ## D. Desktop Chrome / Edge (Master, 1366×768 and 1920×1080)
-- [ ] The sidebar shows Work Inv (with badge), New Invoice, All Invoices, Void requests.
-- [ ] Alt+1 to Alt+4 switch sections; "/" jumps to invoice search.
+- [ ] Sign-in asks for the PIN on a second page.
+- [ ] The sidebar shows Dashboard, Work Inv (with badge), New Invoice, All Invoices, Void requests, Work orders and Team.
+- [ ] Alt+1 to Alt+7 switch sections; "/" jumps to invoice search.
 - [ ] The invoice table shows spare cost, gross profit (red if negative), and Self-issued / Edited / Void requested flags.
 - [ ] "Load more" pages through older invoices.
 - [ ] Date filter: Today, Yesterday and Date range (From/To pickers) show only invoices with those invoice dates; From after To shows an error.
 - [ ] Void asks for the PIN when the last PIN entry is over 5 minutes old; the voided invoice keeps its number.
 - [ ] Void requests: Approve (asks for the PIN) voids the invoice; Refuse leaves it issued.
+- [ ] Team → Add user: a Technician cannot be created until Invoice only or Invoice + Work allocation is chosen; an Admin Technician needs a PIN. The details card is shown once and Copy details works.
+- [ ] Team → Edit switches a technician's type; Password / PIN signs that person out; Remove stops them signing in and Restore lets them back in.
+- [ ] Team actions ask for the PIN when the last PIN entry is over 5 minutes old.
 - [ ] The window narrowed to phone width still works (no sideways scrolling).
 
 ## E. Every device

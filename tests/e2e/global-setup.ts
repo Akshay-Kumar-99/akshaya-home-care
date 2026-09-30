@@ -21,6 +21,7 @@ export interface E2eAccount {
 /**
  * Wipes the Neon TEST branch, migrates, seeds, and gives every account known credentials
  * (first-login change already done) except Technician 3, kept for the first-login UI test.
+ * Technician 2 is labelled "Invoice + Work allocation" for the Works assigned flow.
  */
 export default async function globalSetup(): Promise<void> {
   const pool = createTestPool();
@@ -37,6 +38,7 @@ export default async function globalSetup(): Promise<void> {
       await withTransaction(pool, (client) => replaceCredentials(client, a.id, password, pin ?? null, TEST_PEPPER, false));
       accounts.push({ role: a.role, displayName: a.displayName, username: a.username, password, pin, mustChange: false });
     }
+    await pool.query("UPDATE users SET technician_mode = 'invoice_and_work' WHERE display_name = 'Technician 2'");
     writeFileSync(CREDENTIALS_FILE, JSON.stringify(accounts, null, 2));
   } finally {
     await pool.end();

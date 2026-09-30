@@ -3,7 +3,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import type { Context, MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { csrfTokenFor } from '../auth/sessions.ts';
-import { can, type Action } from '../rbac/policy.ts';
+import { canActor, type Action } from '../rbac/policy.ts';
 import type { AppDeps, AppEnv } from './context.ts';
 
 export const BACKGROUND_HEADER = 'x-ahc-background';
@@ -122,7 +122,7 @@ export function requireAuth(options: RequireAuthOptions = {}): MiddlewareHandler
     c.set('auth', {
       entry,
       token,
-      actor: { id: entry.user.id, roleKey: entry.user.roleKey, ip: clientIp(c) },
+      actor: { id: entry.user.id, roleKey: entry.user.roleKey, technicianMode: entry.user.technicianMode, ip: clientIp(c) },
     });
     await next();
   };
@@ -130,7 +130,7 @@ export function requireAuth(options: RequireAuthOptions = {}): MiddlewareHandler
 
 export function requirePermission(action: Action): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    if (!can(c.get('auth').actor.roleKey, action)) return c.json({ error: 'forbidden' }, 403);
+    if (!canActor(c.get('auth').actor, action)) return c.json({ error: 'forbidden' }, 403);
     await next();
   };
 }

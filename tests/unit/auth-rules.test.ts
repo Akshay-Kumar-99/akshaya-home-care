@@ -8,11 +8,24 @@ import {
   usernameKey,
 } from '../../src/server/auth/service.ts';
 import { csrfTokenFor, hashToken } from '../../src/server/auth/sessions.ts';
-import { ACTIONS, can, permissionsFor } from '../../src/server/rbac/policy.ts';
+import { ACTIONS, can, canActor, permissionsFor } from '../../src/server/rbac/policy.ts';
 
 describe('RBAC policy matrix', () => {
-  it('gives the Master every action', () => {
-    expect(permissionsFor('master')).toEqual([...ACTIONS]);
+  it('gives the Master every action except doing field work', () => {
+    expect(permissionsFor('master')).toEqual(ACTIONS.filter((a) => a !== 'work.do'));
+  });
+
+  it('gives Works assigned only to "Invoice + Work allocation" technicians', () => {
+    expect(permissionsFor('technician', 'invoice_and_work').sort()).toEqual([
+      'invoice.submit',
+      'invoice.view_own',
+      'spare_cost.view',
+      'work.do',
+    ]);
+    expect(canActor({ roleKey: 'technician', technicianMode: 'invoice_only' }, 'work.do')).toBe(false);
+    expect(canActor({ roleKey: 'technician', technicianMode: 'invoice_and_work' }, 'work.assign')).toBe(false);
+    expect(canActor({ roleKey: 'admin_technician', technicianMode: 'invoice_and_work' }, 'work.do')).toBe(false);
+    expect(can('admin_technician', 'work.assign')).toBe(true);
   });
 
   it('never lets a technician see profit, margin, the message or other people\'s work', () => {

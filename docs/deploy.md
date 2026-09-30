@@ -48,6 +48,8 @@ git push
 3. On the Admin Technician's phone: Work Inv → **Turn on alerts**, then apply the battery settings in [phase-1-architecture.md §6](phase-1-architecture.md).
 
 ## Good to know
+- **Database updates deploy themselves:** on start-up the server applies any new migration before it serves requests. If a migration fails, the new version doesn't start and Render keeps the previous one live. Check the Render log for "Database migration failed".
+- **Users are managed in the app:** the Master's Team panel adds, edits and removes users and sets passwords and PINs (see [work-allocation-and-team.md](work-allocation-and-team.md)). `PROD-LOGINS-DELETE-ME.txt` is only for the very first sign-in.
 - **Free plan sleep:** after 15 minutes with no use the server sleeps. The next opening shows "Waking the server…" for up to about a minute.
 - **Never** point `.env` (dev) at production, and never run `npm test` or `npm run test:e2e` with `TEST_DATABASE_URL` set to production, because they wipe their database.
 - **Emergency reset** of a live account (reads `.env.production`): `npm run emergency-reset:prod -- --list`, then `npm run emergency-reset:prod -- --username <name>` (see [phase-3-auth.md](phase-3-auth.md)).

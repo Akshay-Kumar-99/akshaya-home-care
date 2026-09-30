@@ -9,6 +9,7 @@ import { healthRoutes } from './routes/health.ts';
 import { invoiceRoutes, voidRequestRoutes } from './routes/invoices.ts';
 import { jobRoutes, lookupRoutes } from './routes/jobs.ts';
 import { pushRoutes } from './routes/push.ts';
+import { workRoutes } from './routes/work.ts';
 import { workInvRoutes } from './routes/workinv.ts';
 import { serveSpa } from './static.ts';
 
@@ -59,6 +60,7 @@ export function createApp(options: AppOptions = {}): Hono<AppEnv> {
     app.route('/api/lookups', lookupRoutes);
     app.route('/api/jobs', jobRoutes);
     app.route('/api/workinv', workInvRoutes);
+    app.route('/api/work', workRoutes);
     app.route('/api/invoices', invoiceRoutes);
     app.route('/api/void-requests', voidRequestRoutes);
     app.route('/api/push', pushRoutes);

@@ -9,12 +9,17 @@ export function account(displayName: string): E2eAccount {
   return found;
 }
 
+/** Username + password; the Master and Admin Technician then get the PIN page. */
 export async function signIn(page: Page, who: E2eAccount): Promise<void> {
   await page.goto('/');
   await page.getByLabel('Username').fill(who.username);
   await page.getByLabel('Password', { exact: true }).fill(who.password);
-  if (who.pin) await page.getByLabel('PIN (office staff only)').fill(who.pin);
   await page.getByRole('button', { name: 'Sign in' }).click();
+  if (who.pin) {
+    await expect(page.getByRole('heading', { name: 'Enter your PIN' })).toBeVisible();
+    await page.getByLabel('PIN', { exact: true }).fill(who.pin);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+  }
 }
 
 /** Fails if the page scrolls sideways at the current viewport. */

@@ -1,4 +1,4 @@
-import type { RoleKey } from './constants.ts';
+import type { RoleKey, TechnicianMode } from './constants.ts';
 
 // Response shapes shared by the server and the web app. Each role has its own DTO:
 // technician-facing shapes contain no profit, margin or customer message by construction.
@@ -11,7 +11,7 @@ export interface SessionInfo {
   locked: boolean;
   pinEnabled: boolean;
   mustChange: boolean;
-  user: { id: string; username: string; displayName: string; role: RoleKey };
+  user: { id: string; username: string; displayName: string; role: RoleKey; technicianMode: TechnicianMode | null };
   permissions: string[];
   kind: 'mobile' | 'desktop';
   idleTimeoutMinutes: number;
@@ -225,4 +225,60 @@ export interface VoidRequestRow {
   requestedByName: string;
   createdAt: string;
   status: 'pending' | 'approved' | 'rejected';
+}
+
+// ---------------------------------------------------------------- work allocation
+
+export type WorkStatus = 'new' | 'assigned' | 'in_progress' | 'completed' | 'cancelled';
+
+/** A work order (a job assigned to an "Invoice + Work allocation" technician). */
+export interface WorkOrder {
+  id: string;
+  status: WorkStatus;
+  customerName: string;
+  phone: string;
+  areaId: string | null;
+  area: string | null;
+  address: string | null;
+  applianceTypeKey: string;
+  appliance: string;
+  brandId: string | null;
+  brand: string | null;
+  complaint: string | null;
+  scheduledAt: string | null;
+  assignedToId: string | null;
+  assignedToName: string | null;
+  assignedByName: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  cancelReason: string | null;
+  /** Latest invoice raised on this job (never the message text). */
+  invoice: { id: string; state: InvoiceState; invoiceNumber: number | null; rejectedReason: string | null } | null;
+}
+
+export interface WorkTechnician {
+  id: string;
+  displayName: string;
+  openJobs: number;
+}
+
+/** Answered from memory: when `version` changes, the client reloads its Works assigned list. */
+export interface WorkVersion {
+  version: number;
+}
+
+// ---------------------------------------------------------------- team management (Master)
+
+export interface TeamMember {
+  id: string;
+  username: string;
+  displayName: string;
+  roleKey: RoleKey;
+  technicianMode: TechnicianMode | null;
+  status: 'active' | 'disabled';
+  mustChange: boolean;
+  createdAt: string;
+  activeSessions: number;
+  lastLoginAt: string | null;
+  openJobs: number;
 }

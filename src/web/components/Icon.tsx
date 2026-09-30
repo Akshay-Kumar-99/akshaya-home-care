@@ -120,6 +120,37 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   cloud: <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />,
+  clipboard: (
+    <>
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 14l2 2 4-4" />
+    </>
+  ),
+  play: <path d="M6 3l14 9-14 9V3Z" />,
+  calendar: (
+    <>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
+    </>
+  ),
+  users: (
+    <>
+      <circle cx="9" cy="7" r="4" />
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
+  userPlus: (
+    <>
+      <circle cx="9" cy="7" r="4" />
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M19 8v6M22 11h-6" />
+    </>
+  ),
+  key: (
+    <>
+      <circle cx="7.5" cy="15.5" r="5.5" />
+      <path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3" />
+    </>
+  ),
   snowflake: (
     <path d="M12 2v20M4.93 7l14.14 10M19.07 7 4.93 17M9 4l3 3 3-3M9 20l3-3 3 3M2.8 10.3l4.2-.8-1.5-4M21.2 13.7l-4.2.8 1.5 4M21.2 10.3 17 9.5l1.5-4M2.8 13.7l4.2.8-1.5 4" />
   ),

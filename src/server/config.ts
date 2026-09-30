@@ -10,6 +10,8 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  /** Sign-in and recovery attempts allowed per IP address per 5 minutes. */
+  AUTH_IP_LIMIT: z.coerce.number().int().min(1).max(10_000).default(10),
   /** Web Push (optional): all three set enables push; all empty disables it. */
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),

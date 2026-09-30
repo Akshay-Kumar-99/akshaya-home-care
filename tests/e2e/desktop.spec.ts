@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { account, expectNoHorizontalScroll, signIn, uniquePhone } from './support.ts';
 
 // The Master on desktop Chrome/Edge at 1366×768: rail shell, business dashboard, Copy invoice,
-// invoice list with profit, and void.
+// invoice list with profit, void, and the Team panel.
 
 const shots = (name: string) => ({ path: `test-results/screens/desktop-${name}.png`, fullPage: true });
 
@@ -81,4 +81,39 @@ test('Master: dashboard, Copy invoice, invoice list with profit, and void', asyn
   await expect(page.getByRole('heading', { name: 'All Invoices' })).toBeVisible();
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await expectNoHorizontalScroll(page);
+});
+
+test('Master: Team panel adds an Invoice + Work technician', async ({ page }) => {
+  await signIn(page, account('Master'));
+  await expect(page.getByRole('heading', { name: 'Business dashboard' })).toBeVisible();
+  await page.keyboard.press('Alt+7');
+  await expect(page.getByRole('heading', { name: 'Team' })).toBeVisible();
+  await expect(page.locator('article', { hasText: 'Technician 2' }).getByText('Invoice + Work allocation')).toBeVisible();
+  await expect(page.locator('article', { hasText: 'Technician 1' }).getByText('Invoice only')).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  await page.screenshot(shots('04-team'));
+
+  const username = `karthik-${Date.now() % 100_000}`;
+  await page.getByRole('button', { name: 'Add user' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a user' });
+  await dialog.getByLabel('Name', { exact: true }).fill('Karthik');
+  await dialog.getByLabel('Username', { exact: true }).fill(username);
+  await dialog.getByRole('radio', { name: 'Technician', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Generate' }).click();
+  // A technician must be given a type before the account can be created.
+  await dialog.getByRole('button', { name: 'Create user' }).click();
+  await expect(dialog.getByText('Choose Invoice only or Invoice + Work allocation.')).toBeVisible();
+  await dialog.getByRole('radio', { name: 'Invoice + Work allocation' }).click();
+  await page.screenshot(shots('05-add-user'));
+  await dialog.getByRole('button', { name: 'Create user' }).click();
+
+  const created = page.getByRole('dialog', { name: 'User created' });
+  await expect(created).toContainText(username);
+  await created.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('article', { hasText: 'Karthik' }).getByText('Invoice + Work allocation')).toBeVisible();
+
+  await page.keyboard.press('Alt+6');
+  await expect(page.getByRole('heading', { name: 'Work orders' })).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  await page.screenshot(shots('06-work-orders'));
 });

@@ -16,6 +16,13 @@ export const ROLE_KEYS = ['master', 'admin_technician', 'technician'] as const;
 export type RoleKey = (typeof ROLE_KEYS)[number];
 
 /**
+ * Technician label (owner, Sep 2026). "invoice_only": the standard technician app.
+ * "invoice_and_work": also gets the Works assigned tab (jobs assigned by the Master / Admin Technician).
+ */
+export const TECHNICIAN_MODES = ['invoice_only', 'invoice_and_work'] as const;
+export type TechnicianMode = (typeof TECHNICIAN_MODES)[number];
+
+/**
  * Roles that have a PIN (second factor at login, idle unlock, step-up). Owner decision
  * (29 Sep 2026): technicians sign in with username + password only: no PIN and no idle PIN
  * lock. Their blast radius is small (own submissions only) and the Master can revoke sessions.

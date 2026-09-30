@@ -1,9 +1,12 @@
 import { Hono, type Context } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { roleUsesPin } from '../../shared/constants.ts';
 import { z } from 'zod';
+import { PIN_CHALLENGE_TTL_MS } from '../auth/challenges.ts';
 import {
   changeCredentials,
-  login,
+  loginPassword,
+  loginPin,
   recoverWithCode,
   verifySessionPin,
   issueRecoveryCodes,
@@ -22,17 +25,22 @@ import {
 import { permissionsFor } from '../rbac/policy.ts';
 import type { SessionEntry } from '../auth/sessions.ts';
 
-const INVALID_CREDENTIALS = 'Username, password or PIN is incorrect.';
+const INVALID_CREDENTIALS = 'Username or password is incorrect.';
 
-// The PIN field is optional: office roles must fill it, technicians leave it empty (ignored).
-
+// Two-step sign-in (owner decision, Sep 2026): username + password, then, for the Master and
+// Admin Technician only, a PIN page. The challenge between the steps lives in an HttpOnly cookie.
 const LoginBody = z.object({
   username: z.string().min(1).max(64),
   password: z.string().min(1).max(256),
-  pin: z.string().max(12).optional().default(''),
   deviceKind: z.enum(['mobile', 'desktop']).default('mobile'),
   deviceLabel: z.string().trim().max(60).optional(),
 });
+
+const LoginPinBody = z.object({ pin: z.string().min(1).max(12) });
+
+function challengeCookieName(secure: boolean): string {
+  return secure ? '__Host-ahc_pin' : 'ahc_pin';
+}
 
 const PinBody = z.object({
   pin: z.string().min(1).max(12),
@@ -65,8 +73,9 @@ function sessionView(entry: SessionEntry, locked: boolean, idleMs: number) {
       username: entry.user.username,
       displayName: entry.user.displayName,
       role: entry.user.roleKey,
+      technicianMode: entry.user.technicianMode,
     },
-    permissions: permissionsFor(entry.user.roleKey),
+    permissions: permissionsFor(entry.user.roleKey, entry.user.technicianMode),
     kind: entry.kind,
     idleTimeoutMinutes: Math.round(idleMs / 60_000),
     absoluteExpiresAt: new Date(entry.absoluteExpiresAt).toISOString(),
@@ -94,20 +103,53 @@ export const authRoutes = new Hono<AppEnv>()
     const body = await parseJson(c, LoginBody);
     if (!body) return c.json({ error: 'invalid_request' }, 400);
 
-    const result = await login(deps, {
+    const result = await loginPassword(deps, {
       username: body.username,
       password: body.password,
-      pin: body.pin,
       kind: body.deviceKind,
       ip,
       userAgent: c.req.header('user-agent') ?? null,
       deviceLabel: body.deviceLabel ?? null,
     });
+    if (result.ok === 'pin_required') {
+      setCookie(c, challengeCookieName(deps.secureCookies), result.challengeToken, {
+        path: '/',
+        httpOnly: true,
+        secure: deps.secureCookies,
+        sameSite: 'Strict',
+        maxAge: Math.floor(PIN_CHALLENGE_TTL_MS / 1000),
+      });
+      return c.json({ pinRequired: true, displayName: result.displayName });
+    }
     if (!result.ok) {
       return result.reason === 'locked'
         ? limited(c, result.retryAfterSec)
         : c.json({ error: 'invalid_credentials', message: INVALID_CREDENTIALS }, 401);
     }
+    setSessionCookies(c, result.token, result.entry.absoluteExpiresAt);
+    return c.json(sessionView(result.entry, false, await deps.sessions.idleTimeoutMs()));
+  })
+
+  // Sign-in step 2 for office roles: the PIN answers the challenge from step 1. Not counted
+  // against the per-IP limit: reaching it needs the right password, each challenge allows 5
+  // tries, and wrong PINs count toward the account lockout.
+  .post('/login/pin', async (c) => {
+    const deps = c.get('deps');
+    const ip = clientIp(c);
+    const body = await parseJson(c, LoginPinBody);
+    if (!body) return c.json({ error: 'invalid_request' }, 400);
+
+    const cookieName = challengeCookieName(deps.secureCookies);
+    const result = await loginPin(deps, getCookie(c, cookieName), body.pin, ip);
+    if (!result.ok) {
+      if (result.reason === 'invalid_pin' && result.remaining > 0) {
+        return c.json({ error: 'invalid_pin', remainingAttempts: result.remaining }, 401);
+      }
+      deleteCookie(c, cookieName, { path: '/', secure: deps.secureCookies });
+      if (result.reason === 'locked') return limited(c, result.retryAfterSec);
+      return c.json({ error: 'pin_challenge_expired' }, 401);
+    }
+    deleteCookie(c, cookieName, { path: '/', secure: deps.secureCookies });
     setSessionCookies(c, result.token, result.entry.absoluteExpiresAt);
     return c.json(sessionView(result.entry, false, await deps.sessions.idleTimeoutMs()));
   })

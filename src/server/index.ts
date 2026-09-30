@@ -3,20 +3,32 @@ import path from 'node:path';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.ts';
 import { parsePepper } from './auth/hashing.ts';
+import { PinChallengeStore } from './auth/challenges.ts';
 import { SlidingWindowLimiter } from './auth/rate-limit.ts';
 import { SessionStore } from './auth/sessions.ts';
 import { loadConfig, vapidFrom } from './config.ts';
 import { createPool } from './db/client.ts';
+import { runMigrations } from './db/migrate.ts';
 import { LookupsCache } from './services/lookups.ts';
 import { PushService } from './services/push.ts';
 import { QueueState } from './services/queue-state.ts';
 import { SettingsCache } from './services/settings.ts';
+import { WorkState } from './services/work-state.ts';
 
 const config = loadConfig();
 const distWeb = path.resolve(import.meta.dirname, '../../dist/web');
 const staticRoot = config.NODE_ENV === 'production' && existsSync(distWeb) ? distWeb : undefined;
 
 const pool = createPool(config.DATABASE_URL);
+
+// Apply pending migrations before serving, so a `git push` deploy updates the database too.
+// If a migration fails the process exits and Render keeps the previous version live.
+try {
+  await runMigrations(pool);
+} catch (err) {
+  console.error('Database migration failed; not starting:', (err as Error).message);
+  process.exit(1);
+}
 const settings = new SettingsCache(pool);
 const push = new PushService(pool, vapidFrom(config));
 const app = createApp({
@@ -27,12 +39,14 @@ const app = createApp({
     sessions: new SessionStore(pool, settings),
     lookups: new LookupsCache(pool),
     queue: new QueueState(pool),
+    work: new WorkState(),
+    challenges: new PinChallengeStore(),
     push,
     pepper: parsePepper(config.PIN_PEPPER),
     secureCookies: config.NODE_ENV === 'production',
     trustProxy: config.TRUST_PROXY,
-    // 10 login/recovery attempts per IP per 5 minutes.
-    authLimiter: new SlidingWindowLimiter(10, 5 * 60_000),
+    // Password and recovery attempts per IP per 5 minutes (default 10).
+    authLimiter: new SlidingWindowLimiter(config.AUTH_IP_LIMIT, 5 * 60_000),
   },
 });
 

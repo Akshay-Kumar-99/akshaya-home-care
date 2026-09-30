@@ -24,6 +24,8 @@ test.describe.serial('technician and admin technician on Android', () => {
   test('technician signs in without a PIN and saves a job to the server', async ({ page }) => {
     await signIn(page, account('Technician 1'));
     await expect(page.getByRole('heading', { name: 'New Job' })).toBeVisible();
+    // "Invoice only": the same interface as before, no Works assigned tab.
+    await expect(page.getByRole('button', { name: 'Works assigned' })).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await page.screenshot(shots('01-new-job-empty'));
 
@@ -40,7 +42,14 @@ test.describe.serial('technician and admin technician on Android', () => {
     await page.screenshot(shots('03-my-submissions'));
   });
 
-  test('admin technician copies the message: number issued, clipboard filled, WhatsApp link offered', async ({ page }) => {
+  test('admin technician signs in with password, then PIN, and copies the message', async ({ page }) => {
+    await page.goto('/');
+    await page.getByLabel('Username').fill(account('Admin Technician').username);
+    await page.getByLabel('Password', { exact: true }).fill(account('Admin Technician').password);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByRole('heading', { name: 'Enter your PIN' })).toBeVisible();
+    await page.screenshot(shots('04a-pin-step'));
+    await page.getByRole('button', { name: 'Not you? Start again' }).click();
     await signIn(page, account('Admin Technician'));
     await expect(page.getByRole('heading', { name: 'Technician Work Inv' })).toBeVisible();
     const card = page.locator('article', { hasText: customer });
@@ -75,6 +84,7 @@ test.describe.serial('technician and admin technician on Android', () => {
 
   test('offline: the job is kept on the phone and sent when the connection returns', async ({ page, context }) => {
     await signIn(page, account('Technician 2'));
+    await page.getByRole('button', { name: 'New Job' }).click();
     await expect(page.getByRole('heading', { name: 'New Job' })).toBeVisible();
     const offlineName = `Offline ${uniquePhone().slice(-4)}`;
     await context.setOffline(true);
@@ -117,5 +127,75 @@ test.describe.serial('technician and admin technician on Android', () => {
     await page.getByRole('button', { name: 'New Invoice' }).click();
     await expectNoHorizontalScroll(page);
     await page.screenshot(shots('10-new-invoice-360'));
+    await page.getByRole('button', { name: 'Work orders' }).click();
+    await expect(page.getByRole('heading', { name: 'Work orders' })).toBeVisible();
+    await expectNoHorizontalScroll(page);
+  });
+});
+
+test.describe.serial('work allocation on Android', () => {
+  const phone = uniquePhone();
+  const customer = `Work ${phone.slice(-4)}`;
+
+  test('admin technician assigns a job to an Invoice + Work technician', async ({ page }) => {
+    await signIn(page, account('Admin Technician'));
+    await page.getByRole('button', { name: 'Work orders' }).click();
+    await expect(page.getByRole('heading', { name: 'Work orders' })).toBeVisible();
+    await page.getByRole('button', { name: 'New work order' }).click();
+    const dialog = page.getByRole('dialog', { name: 'New work order' });
+    await dialog.getByLabel('Customer phone').fill(phone);
+    await dialog.getByLabel('Customer name').fill(customer);
+    await dialog.getByLabel('Area').fill('Thiruvanmiyur');
+    await dialog.getByLabel('Address for the visit').fill('12, 3rd Main Road');
+    await dialog.getByRole('radio', { name: 'AC (split)' }).click();
+    await dialog.getByLabel('Complaint').fill('AC not cooling');
+    // Only Invoice + Work technicians are offered.
+    await expect(dialog.locator('option', { hasText: 'Technician 1' })).toHaveCount(0);
+    const tech2 = await dialog.locator('option', { hasText: 'Technician 2' }).getAttribute('value');
+    await dialog.getByLabel('Assign to').selectOption(tech2!);
+    await page.screenshot(shots('11-new-work-order'));
+    await dialog.getByRole('button', { name: 'Assign' }).click();
+    await expect(page.getByText('Assigned to Technician 2.')).toBeVisible();
+    await expect(page.locator('article', { hasText: customer }).getByText('Assigned', { exact: true })).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await page.screenshot(shots('12-work-orders'));
+  });
+
+  test('the technician starts the job and completes it with the invoice', async ({ page }) => {
+    await signIn(page, account('Technician 2'));
+    await expect(page.getByRole('heading', { name: 'Works assigned' })).toBeVisible();
+    await expect(page.locator('.tabbar-badge')).toHaveText('1');
+    const card = page.locator('article', { hasText: customer });
+    await expect(card.getByText(/AC not cooling/)).toBeVisible();
+    await expect(card.getByText(/12, 3rd Main Road/)).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await page.screenshot(shots('13-works-assigned'));
+
+    await card.getByRole('button', { name: 'Start job' }).click();
+    await expect(card.getByText('In progress', { exact: true })).toBeVisible();
+    await card.getByRole('button', { name: 'Complete & create invoice' }).click();
+    await expect(page.getByRole('heading', { name: 'Complete the job' })).toBeVisible();
+    await expect(page.getByText(customer)).toBeVisible();
+    await page.getByRole('button', { name: 'Gas refilling' }).click();
+    await page.getByLabel('Total (₹)').fill('2600');
+    await page.getByLabel('Spare cost (₹)').fill('900');
+    await page.getByRole('radio', { name: 'Cash' }).click();
+    await expectNoHorizontalScroll(page);
+    await page.screenshot(shots('14-complete-work'));
+    await page.getByRole('button', { name: 'Complete & create invoice' }).click();
+    await expect(page.getByText('Job completed. The office will send the invoice.')).toBeVisible();
+    await expect(page.locator('article', { hasText: customer }).getByText('Submitted', { exact: true })).toBeVisible();
+    await expect(page.locator('.tabbar-badge')).toHaveCount(0);
+  });
+
+  test('the office copies the invoice raised from the work order', async ({ page }) => {
+    await signIn(page, account('Admin Technician'));
+    const card = page.locator('article', { hasText: customer });
+    await expect(card.getByText('₹2,600.00', { exact: true })).toBeVisible();
+    await card.getByRole('button', { name: 'Copy invoice' }).click();
+    await expect(page.getByRole('status').filter({ hasText: `for ${customer} copied` })).toBeVisible();
+    await page.getByRole('button', { name: 'Work orders' }).click();
+    await page.getByRole('tab', { name: 'Completed' }).click();
+    await expect(page.locator('article', { hasText: customer }).getByText(/Issued · INV-\d+/)).toBeVisible();
   });
 });

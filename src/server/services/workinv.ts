@@ -231,8 +231,17 @@ export async function requeue(pool: pg.Pool, actor: Actor, invoiceId: string): P
   });
 }
 
-/** Rejects a pending item with a reason the technician will see. The job is cancelled. */
-export async function reject(pool: pg.Pool, actor: Actor, invoiceId: string, reason: string): Promise<SimpleResult> {
+/**
+ * Rejects a pending item with a reason the technician will see. A walk-in job is cancelled;
+ * an assigned work order goes back to its technician's Works assigned list (in progress) so
+ * they can correct it and complete it again. Returns that technician, if any.
+ */
+export async function reject(
+  pool: pg.Pool,
+  actor: Actor,
+  invoiceId: string,
+  reason: string,
+): Promise<{ ok: true; returnedTo: string | null } | { ok: false; error: 'not_found' | 'wrong_state' }> {
   return withTransaction(pool, async (client) => {
     const locked = await client.query<{ state: string; job_id: string }>(
       'SELECT state, job_id FROM invoices WHERE id = $1 FOR UPDATE',
@@ -246,7 +255,22 @@ export async function reject(pool: pg.Pool, actor: Actor, invoiceId: string, rea
        WHERE id = $1`,
       [invoiceId, reason, actor.id],
     );
-    await client.query("UPDATE jobs SET status = 'cancelled', updated_at = now() WHERE id = $1", [inv.job_id]);
+    const job = await client.query<{ assigned_to: string | null }>(
+      'SELECT assigned_to FROM jobs WHERE id = $1 FOR UPDATE',
+      [inv.job_id],
+    );
+    const returnedTo = job.rows[0]?.assigned_to ?? null;
+    if (returnedTo) {
+      await client.query(
+        "UPDATE jobs SET status = 'in_progress', completed_at = NULL, updated_at = now() WHERE id = $1",
+        [inv.job_id],
+      );
+    } else {
+      await client.query(
+        "UPDATE jobs SET status = 'cancelled', cancelled_at = now(), cancelled_by = $2, cancel_reason = $3, updated_at = now() WHERE id = $1",
+        [inv.job_id, actor.id, reason],
+      );
+    }
     await client.query(
       `INSERT INTO audit_log (actor_id, action, entity_type, entity_id, old_values, new_values, reason, ip)
        VALUES ($1, 'invoice.rejected', 'invoice', $2, $3, $4, $5, $6)`,
@@ -259,7 +283,7 @@ export async function reject(pool: pg.Pool, actor: Actor, invoiceId: string, rea
         actor.ip ?? null,
       ],
     );
-    return { ok: true };
+    return { ok: true, returnedTo };
   });
 }
 
