@@ -62,5 +62,8 @@ Written: 29 Sep 2026.
 - [ASSUMPTION] Desktop sessions last 12 hours in total; mobile sessions last 30 days.
 - [ASSUMPTION] Step-up is valid for 5 minutes.
 - [ASSUMPTION] 5 wrong PINs on a session revoke it.
-- [ASSUMPTION] Technicians can look up any customer by phone, to auto-fill name and area as the spec requires. They can't see other technicians' jobs or invoices.
+- [ASSUMPTION] Technicians can look up any customer by phone, to auto-fill name and area as the spec requires. They can't see other technicians' jobs or invoices, with one exception.
+  - **The exception (owner, 30 Sep 2026):** for a typed phone, the lookup also returns the last 3 visits and any live service warranty. It includes the invoice number, date, appliance, brand, area and service done, so a "Warranty service" can be filled in.
+  - It never includes amounts, spare cost, profit or the customer message.
+  - The warranty link is checked by the SECURITY DEFINER function `ahc_warranty_cover_ok`, so row-level security stays on for everything else.
 - [ASSUMPTION] The PIN page stays valid for 5 minutes and allows 5 tries before the user must start again with the password.

@@ -25,6 +25,40 @@ export interface LookupsResponse {
   servicePresets: string[];
 }
 
+/** A past visit, shown when a known phone is typed (no amounts: technicians see this too). */
+export interface CustomerVisit {
+  invoiceNumber: number | null;
+  date: string;
+  appliance: string;
+  serviceDescription: string;
+  warrantyService: boolean;
+}
+
+/** An issued invoice whose 90-day service warranty is still running for this phone. */
+export interface WarrantyCover {
+  invoiceId: string;
+  invoiceNumber: number;
+  invoiceDate: string;
+  warrantyUntil: string;
+  applianceTypeKey: string;
+  appliance: string;
+  brandId: string | null;
+  brand: string | null;
+  areaId: string | null;
+  area: string | null;
+  serviceDescription: string;
+}
+
+export type CustomerLookup =
+  | { found: false }
+  | { found: true; name: string; areaId: string | null; visits: CustomerVisit[]; warranties: WarrantyCover[] };
+
+/** Master: settings printed on every invoice message. */
+export interface BusinessSettings {
+  termsUrl: string | null;
+  officialPhone: string;
+}
+
 /** Technician view of their own submission. No profit, no message, no WhatsApp link. */
 export interface MySubmission {
   id: string;
@@ -43,6 +77,8 @@ export interface MySubmission {
   paymentMode: PaymentMode | null;
   rejectedReason: string | null;
   editedByOffice: boolean;
+  /** A warranty service (free or visit charge), covered by an earlier invoice. */
+  warrantyService: boolean;
 }
 
 /** Work Inv card (checkers only). */
@@ -70,6 +106,8 @@ export interface QueueCard {
   negativeMargin: boolean;
   edited: boolean;
   possibleDuplicate: boolean;
+  /** Warranty service: the number of the invoice whose warranty covers it. */
+  warrantyForNumber: number | null;
   /** Exact customer message; for unissued items the number shows "(assigned on copy)". */
   preview: string;
   copiedByName: string | null;
@@ -117,6 +155,8 @@ export interface InvoiceRow {
   edited: boolean;
   negativeMargin: boolean;
   voidRequestPending: boolean;
+  /** Warranty service: the number of the invoice whose warranty covers it. */
+  warrantyForNumber: number | null;
 }
 
 export interface InvoiceDetail extends InvoiceRow {
@@ -127,6 +167,7 @@ export interface InvoiceDetail extends InvoiceRow {
   issuedAt: string | null;
   rejectedReason: string | null;
   voidReason: string | null;
+  /** Last day of the service warranty (the covering invoice's, for a warranty service). */
   warrantyExpiresAt: string;
   history: Array<{ at: string; action: string; actorName: string | null; reason: string | null }>;
 }

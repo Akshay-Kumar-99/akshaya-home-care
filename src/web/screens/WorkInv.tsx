@@ -202,7 +202,7 @@ export function WorkInv() {
                   </a>
                 </div>
                 <div className="queue-card-amount">
-                  <strong className="amount amount-lg">{formatInr(card.totalPaise)}</strong>
+                  <strong className="amount amount-lg">{card.totalPaise === 0 ? t.noCharge : formatInr(card.totalPaise)}</strong>
                   <span className="muted small">
                     {t.spareShort} {formatInr(card.spareCostPaise)}
                   </span>
@@ -243,6 +243,9 @@ export function WorkInv() {
                 {card.requeued && card.invoiceNumber ? <span className="pill pill-issued">{t.requeued(card.invoiceNumber)}</span> : null}
                 {tab === 'recent' && card.invoiceNumber ? (
                   <span className="pill pill-issued">{formatInvoiceNumber(card.invoiceNumber)}</span>
+                ) : null}
+                {card.warrantyForNumber ? (
+                  <span className="pill pill-gold">{t.warrantyForPill(formatInvoiceNumber(card.warrantyForNumber))}</span>
                 ) : null}
                 {card.possibleDuplicate ? <span className="pill pill-warn">{t.possibleDuplicate}</span> : null}
                 {card.negativeMargin ? <span className="pill pill-bad">{t.negativeMargin}</span> : null}

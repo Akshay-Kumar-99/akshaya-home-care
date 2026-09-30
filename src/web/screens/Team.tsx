@@ -111,6 +111,7 @@ function GeneratedSecret(props: {
   );
 }
 
+/** The Team tab of Settings (Master only). */
 export function Team() {
   const me = useUser();
   const { toast, withStepUp } = useFeedback();
@@ -238,10 +239,9 @@ export function Team() {
   };
 
   return (
-    <section className="page">
+    <div className="stack">
       <header className="page-head">
         <div>
-          <h2 className="page-title">{t.navTeam}</h2>
           <p className="page-sub">{t.teamIntro}</p>
         </div>
         <button type="button" className="btn btn-primary" onClick={() => setDialog(<AddUserDialog onClose={close} show={setDialog} />)}>
@@ -300,7 +300,7 @@ export function Team() {
       ) : null}
 
       {dialog}
-    </section>
+    </div>
   );
 }
 

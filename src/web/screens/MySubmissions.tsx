@@ -120,6 +120,7 @@ export function MySubmissions({ offline }: { offline: boolean }) {
                   ? `${t.stateLabel[s.state]} · ${formatInvoiceNumber(s.invoiceNumber!)}`
                   : t.stateLabel[s.state]}
               </span>
+              {s.warrantyService ? <span className="pill pill-gold">{t.warrantyService}</span> : null}
               {s.editedByOffice ? (
                 <span className="pill pill-muted">
                   <Icon name="edit" size={14} />

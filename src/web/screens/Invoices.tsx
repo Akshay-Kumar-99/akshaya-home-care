@@ -52,8 +52,48 @@ function StatePill({ row }: { row: Pick<InvoiceRow, 'state' | 'invoiceNumber'> }
   );
 }
 
-/** All invoices, newest first, server-side search and pagination. Checkers and the Master. */
-export function Invoices({ initialQuery = '' }: { initialQuery?: string }) {
+type InvoicesView = 'all' | 'voids';
+
+/**
+ * All Invoices. The Master (who decides void requests) also gets a "Void requests" tab here
+ * (owner, 30 Sep 2026: one place for invoices instead of a separate menu item).
+ */
+export function Invoices({ initialQuery = '', initialView = 'all' }: { initialQuery?: string; initialView?: InvoicesView }) {
+  const { can } = useSession();
+  const decides = can('void.approve');
+  const [view, setView] = useState<InvoicesView>(decides ? initialView : 'all');
+  const [voidCount, setVoidCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!decides) return;
+    api<{ items: VoidRequestRow[] }>('/api/void-requests?status=pending')
+      .then((res) => setVoidCount(res.items.length))
+      .catch(() => {});
+  }, [decides]);
+
+  return (
+    <section className="page">
+      <header className="page-head">
+        <h2 className="page-title">{t.navInvoices}</h2>
+      </header>
+      {decides ? (
+        <div className="tabs" role="tablist">
+          <button type="button" role="tab" aria-selected={view === 'all'} className={view === 'all' ? 'tab tab-on' : 'tab'} onClick={() => setView('all')}>
+            {t.navInvoices}
+          </button>
+          <button type="button" role="tab" aria-selected={view === 'voids'} className={view === 'voids' ? 'tab tab-on' : 'tab'} onClick={() => setView('voids')}>
+            {t.navVoidRequests}
+            {voidCount ? <span className="tab-count">{voidCount}</span> : null}
+          </button>
+        </div>
+      ) : null}
+      {view === 'all' ? <InvoiceList initialQuery={initialQuery} /> : <VoidRequests onCount={setVoidCount} />}
+    </section>
+  );
+}
+
+/** The invoice list: newest first, server-side search and pagination. Checkers and the Master. */
+function InvoiceList({ initialQuery }: { initialQuery: string }) {
   const { can } = useSession();
   const [q, setQ] = useState(initialQuery);
   const [state, setState] = useState<InvoiceState | ''>('');
@@ -105,11 +145,7 @@ export function Invoices({ initialQuery = '' }: { initialQuery?: string }) {
   }, []);
 
   return (
-    <section className="page">
-      <header className="page-head">
-        <h2 className="page-title">{t.navInvoices}</h2>
-      </header>
-
+    <>
       <div className="search">
         <Icon name="search" size={18} className="search-icon" />
         <input
@@ -208,6 +244,9 @@ export function Invoices({ initialQuery = '' }: { initialQuery?: string }) {
                     </td>
                   ) : null}
                   <td className="flags">
+                    {row.warrantyForNumber ? (
+                      <span className="pill pill-gold">{t.warrantyForPill(formatInvoiceNumber(row.warrantyForNumber))}</span>
+                    ) : null}
                     {row.selfIssued ? <span className="pill pill-muted">{t.selfIssued}</span> : null}
                     {row.voidRequestPending ? <span className="pill pill-warn">{t.voidRequested}</span> : null}
                     {row.edited ? <span className="pill pill-muted">{t.edited}</span> : null}
@@ -234,7 +273,7 @@ export function Invoices({ initialQuery = '' }: { initialQuery?: string }) {
           }}
         />
       ) : null}
-    </section>
+    </>
   );
 }
 
@@ -309,7 +348,13 @@ function InvoiceDialog({ id, onClose }: { id: string; onClose: (changed: boolean
           <span className={`pill pill-${detail.state}`}>{t.stateLabel[detail.state]}</span>
           {detail.selfIssued ? <span className="pill pill-muted">{t.selfIssued}</span> : null}
           {detail.voidRequestPending ? <span className="pill pill-warn">{t.voidRequested}</span> : null}
-          <span className="pill pill-muted">{t.warrantyUntil(formatDateDmy(detail.warrantyExpiresAt))}</span>
+          {detail.warrantyForNumber ? (
+            <span className="pill pill-gold">
+              {t.coveredUnder(formatInvoiceNumber(detail.warrantyForNumber), formatDateDmy(detail.warrantyExpiresAt))}
+            </span>
+          ) : (
+            <span className="pill pill-muted">{t.warrantyUntil(formatDateDmy(detail.warrantyExpiresAt))}</span>
+          )}
         </div>
 
         <div className="money-strip">
@@ -405,7 +450,8 @@ function InvoiceDialog({ id, onClose }: { id: string; onClose: (changed: boolean
 }
 
 /** Master: pending void requests from the Admin Technician. */
-export function VoidRequests() {
+/** Master: pending void requests from the Admin Technician (a tab of All Invoices). */
+function VoidRequests({ onCount }: { onCount: (count: number) => void }) {
   const { toast, withStepUp } = useFeedback();
   const { poll } = useQueue();
   const [items, setItems] = useState<VoidRequestRow[] | null>(null);
@@ -413,9 +459,12 @@ export function VoidRequests() {
 
   const load = useCallback(() => {
     api<{ items: VoidRequestRow[] }>('/api/void-requests?status=pending')
-      .then((res) => setItems(res.items))
+      .then((res) => {
+        setItems(res.items);
+        onCount(res.items.length);
+      })
       .catch(() => setItems([]));
-  }, []);
+  }, [onCount]);
 
   useEffect(load, [load]);
 
@@ -437,10 +486,7 @@ export function VoidRequests() {
   }
 
   return (
-    <section className="page">
-      <header className="page-head">
-        <h2 className="page-title">{t.navVoidRequests}</h2>
-      </header>
+    <>
       {items === null ? <Skeleton lines={4} /> : null}
       {items && items.length === 0 ? <EmptyState icon="ban" title={t.noVoidRequests} text={t.noVoidRequestsText} /> : null}
       <div className="cards">
@@ -468,6 +514,6 @@ export function VoidRequests() {
           </article>
         ))}
       </div>
-    </section>
+    </>
   );
 }

@@ -22,11 +22,18 @@ const PaymentSchema = z.discriminatedUnion('status', [
 /** The money-and-payment part of any invoice raised from the field. */
 const InvoiceFields = {
   serviceDescription: z.string().trim().min(1).max(300),
-  totalRupees: Rupees.min(1),
+  /** 0 only on a warranty service (free visit); see `positiveUnlessWarranty`. */
+  totalRupees: Rupees.min(0),
   spareCostRupees: Rupees.min(0),
   /** Must be true when spare cost exceeds the total (negative margin). */
   confirmNegativeMargin: z.boolean().default(false),
+  /** Ignored when the total is 0 (nothing to pay). */
   payment: PaymentSchema,
+  /**
+   * Warranty service (owner, 30 Sep 2026): the earlier invoice whose 90-day service warranty
+   * covers this visit. The server checks it is issued, for the same phone, and still running.
+   */
+  warrantyOfInvoiceId: z.uuid().nullable().default(null),
 };
 
 const negativeMarginConfirmed = <T extends { spareCostRupees: number; totalRupees: number; confirmNegativeMargin: boolean }>(v: T) =>
@@ -35,6 +42,9 @@ const NEGATIVE_MARGIN_ISSUE = {
   message: 'Spare cost is more than the total. Confirm to save anyway.',
   path: ['confirmNegativeMargin'],
 };
+const positiveUnlessWarranty = <T extends { totalRupees: number; warrantyOfInvoiceId: string | null }>(v: T) =>
+  v.totalRupees >= 1 || v.warrantyOfInvoiceId !== null;
+const TOTAL_REQUIRED_ISSUE = { message: 'Enter the total (at least ₹1).', path: ['totalRupees'] };
 
 /** Technician (or admin) job submission. Amounts are whole rupees; the server stores paise. */
 export const SubmissionInputSchema = z
@@ -47,6 +57,7 @@ export const SubmissionInputSchema = z
     brandId: z.uuid().nullable(),
     ...InvoiceFields,
   })
+  .refine(positiveUnlessWarranty, TOTAL_REQUIRED_ISSUE)
   .refine(negativeMarginConfirmed, NEGATIVE_MARGIN_ISSUE);
 
 export type SubmissionInput = z.infer<typeof SubmissionInputSchema>;
@@ -110,6 +121,7 @@ export const WorkCompleteSchema = z
     brandId: z.uuid().nullable(),
     ...InvoiceFields,
   })
+  .refine(positiveUnlessWarranty, TOTAL_REQUIRED_ISSUE)
   .refine(negativeMarginConfirmed, NEGATIVE_MARGIN_ISSUE);
 export type WorkCompleteInput = z.infer<typeof WorkCompleteSchema>;
 
@@ -148,6 +160,19 @@ export const UpdateUserSchema = z
 export type UpdateUserInput = z.infer<typeof UpdateUserSchema>;
 
 /** Master sets a specific password and/or PIN for someone (PIN only for office roles). */
+/** Master: business settings used on every invoice message. */
+export const BusinessSettingsSchema = z.object({
+  /** Terms & Conditions link (e.g. a Google Drive PDF shared "Anyone with the link"); null removes it. */
+  termsUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .regex(/^https:\/\/\S+$/, 'Paste the full link, starting with https://')
+    .nullable(),
+  officialPhone: PhoneSchema,
+});
+export type BusinessSettingsInput = z.infer<typeof BusinessSettingsSchema>;
+
 export const SetCredentialsSchema = z
   .object({
     password: z.string().min(1).max(256).optional(),

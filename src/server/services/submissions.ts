@@ -4,6 +4,7 @@ import type { SubmissionInput } from '../../shared/schemas.ts';
 import { withActorContext } from '../db/actor-context.ts';
 import { isUniqueViolation } from '../db/client.ts';
 import type { Actor } from './types.ts';
+import { assertWarrantyCover } from './warranty.ts';
 
 export interface SubmissionResult {
   invoiceId: string;
@@ -42,6 +43,7 @@ export async function insertSubmission(
 
   const totalPaise = rupeesToPaise(input.totalRupees);
   const spareCostPaise = rupeesToPaise(input.spareCostRupees);
+  if (input.warrantyOfInvoiceId) await assertWarrantyCover(client, input.warrantyOfInvoiceId, input.phone);
 
   const customer = await client.query<{ id: string }>(
     `INSERT INTO customers (phone_e164, name, area_id) VALUES ($1, $2, $3)
@@ -67,16 +69,17 @@ export async function insertSubmission(
   // then inserts nothing; the caller's transaction is rolled back.
   const invoice = await client.query<{ id: string }>(
     `INSERT INTO invoices (job_id, idempotency_key, total_paise, spare_cost_paise,
-                           negative_margin_flag, submitted_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
+                           negative_margin_flag, submitted_by, warranty_of_invoice_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (idempotency_key) DO NOTHING
      RETURNING id`,
-    [jobId, input.idempotencyKey, totalPaise, spareCostPaise, spareCostPaise > totalPaise, actor.id],
+    [jobId, input.idempotencyKey, totalPaise, spareCostPaise, spareCostPaise > totalPaise, actor.id, input.warrantyOfInvoiceId],
   );
   const invoiceId = invoice.rows[0]?.id;
   if (!invoiceId) throw new DuplicateSubmission();
 
-  if (input.payment.status === 'paid') {
+  // A free warranty service has nothing to pay.
+  if (input.payment.status === 'paid' && totalPaise > 0) {
     await client.query(
       `INSERT INTO payments (invoice_id, mode, amount_paise, collected_by_user_id)
        VALUES ($1, $2, $3, $4)`,
@@ -95,6 +98,7 @@ export async function insertSubmission(
         total_paise: totalPaise,
         spare_cost_paise: spareCostPaise,
         payment: input.payment,
+        warranty_of_invoice_id: input.warrantyOfInvoiceId,
       }),
       actor.ip ?? null,
     ],

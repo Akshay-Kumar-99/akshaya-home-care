@@ -440,6 +440,39 @@ export const en = {
     invalid_request: 'Check the details and try again.',
   } as Record<string, string>,
 
+  // warranty service (owner, 30 Sep 2026)
+  warrantyService: 'Warranty service',
+  warrantyCoveredBy: (invoice: string, appliance: string, until: string) => `${invoice} · ${appliance} · warranty till ${until}`,
+  warrantyWhich: 'Covered by which invoice?',
+  warrantyTickHint: 'Tick only if this visit is for the same job. It is free unless you enter a visit charge.',
+  warrantyForPill: (invoice: string) => `Warranty for ${invoice}`,
+  coveredUnder: (invoice: string, until: string) => `Covered under ${invoice} till ${until}`,
+  visitCharge: 'Visit charge (₹)',
+  visitChargeHint: 'Leave empty if free.',
+  noCharge: 'No charge',
+  noChargeNote: 'No charge: nothing to collect.',
+  recentVisits: 'Recent visits',
+  visitPending: 'pending',
+
+  // unfinished form
+  draftRestored: 'Your unfinished invoice was restored.',
+  startOver: 'Start over',
+
+  // settings (Master)
+  navSettings: 'Settings',
+  settingsPageIntro: 'Your team and the details printed on every invoice.',
+  invoiceTemplate: 'Invoice Template',
+  settingsTeamDesc: 'Add, change or remove users; passwords, PINs and sign-ins.',
+  settingsTemplateDesc: 'Terms & Conditions link, business phone and the message customers get.',
+  settingsIntro: 'Details printed on every invoice sent to customers. Changes apply to new invoices only.',
+  termsUrl: 'Terms & Conditions link',
+  termsHint: 'Google Drive: open the PDF, Share, General access: "Anyone with the link" (Viewer), Copy link, paste here. Leave empty to leave it out.',
+  openLink: 'Open link',
+  officialPhone: 'Business phone on invoices',
+  messagePreview: 'How the message will look',
+  settingsSaved: 'Saved. New invoices use these details.',
+  settingsInvalidUrl: 'Paste the full link, starting with https://',
+
   // generic errors
   somethingWrong: 'Something went wrong. Please try again.',
   forbidden: 'You do not have access to this.',

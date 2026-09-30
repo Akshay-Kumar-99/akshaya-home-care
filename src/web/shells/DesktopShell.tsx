@@ -6,29 +6,35 @@ import { Initials, Skeleton, ThemeToggle } from '../components/ui.tsx';
 import { t } from '../i18n/en.ts';
 import { ageLabel } from '../lib/format.ts';
 import { navigate, useLocation } from '../lib/router.ts';
-import { JobForm } from '../screens/JobForm.tsx';
+import { settingsSectionFrom } from '../lib/settings-section.ts';
 
 const Dashboard = lazy(() => import('../screens/Dashboard.tsx').then((m) => ({ default: m.Dashboard })));
 const WorkInv = lazy(() => import('../screens/WorkInv.tsx').then((m) => ({ default: m.WorkInv })));
 const Invoices = lazy(() => import('../screens/Invoices.tsx').then((m) => ({ default: m.Invoices })));
-const VoidRequests = lazy(() => import('../screens/Invoices.tsx').then((m) => ({ default: m.VoidRequests })));
 const WorkOrders = lazy(() => import('../screens/WorkOrders.tsx').then((m) => ({ default: m.WorkOrders })));
-const Team = lazy(() => import('../screens/Team.tsx').then((m) => ({ default: m.Team })));
+const Settings = lazy(() => import('../screens/Settings.tsx').then((m) => ({ default: m.Settings })));
 
+// The Master's desk is for analysis and management (owner, 30 Sep 2026): no New Invoice here;
+// void requests are a tab of All Invoices and the Team panel is a tab of Settings.
 const NAV: Array<{ path: string; label: string; icon: IconName; key: string }> = [
   { path: '/dashboard', label: t.navDashboard, icon: 'grid', key: '1' },
   { path: '/work-inv', label: t.navWorkInv, icon: 'inbox', key: '2' },
-  { path: '/new-invoice', label: t.navNewInvoice, icon: 'plus', key: '3' },
-  { path: '/invoices', label: t.navInvoices, icon: 'receipt', key: '4' },
-  { path: '/void-requests', label: t.navVoidRequests, icon: 'ban', key: '5' },
-  { path: '/work-orders', label: t.navWorkOrders, icon: 'clipboard', key: '6' },
-  { path: '/team', label: t.navTeam, icon: 'users', key: '7' },
+  { path: '/invoices', label: t.navInvoices, icon: 'receipt', key: '3' },
+  { path: '/work-orders', label: t.navWorkOrders, icon: 'clipboard', key: '4' },
+  { path: '/settings', label: t.navSettings, icon: 'sliders', key: '5' },
 ];
+
+/** Earlier addresses, so bookmarks and old links still land in the right place. */
+const MOVED: Record<string, string> = {
+  '/void-requests': '/invoices?view=voids',
+  '/team': '/settings?section=team',
+  '/new-invoice': '/dashboard',
+};
 
 /**
  * Master's desktop shell (1366×768 and up): a slim icon rail on the left, a top bar with
  * live status chips, invoice search and the signed-in user. Collapses to a top row on narrow
- * screens so nothing breaks if opened on a phone. Alt+1…7 switch sections; "/" focuses search.
+ * screens so nothing breaks if opened on a phone. Alt+1…5 switch sections; "/" focuses search.
  */
 export default function DesktopShell() {
   const info = useUser();
@@ -37,9 +43,12 @@ export default function DesktopShell() {
   const { path, search } = useLocation();
   const current = NAV.some((n) => n.path === path) ? path : '/dashboard';
   const [query, setQuery] = useState('');
+  const params = new URLSearchParams(search);
 
   useEffect(() => {
-    if (current !== path) navigate(current, true);
+    const moved = MOVED[path];
+    if (moved) navigate(moved, true);
+    else if (current !== path) navigate(current, true);
   }, [current, path]);
 
   useEffect(() => {
@@ -139,21 +148,15 @@ export default function DesktopShell() {
           <Suspense fallback={<Skeleton lines={10} />}>
             {current === '/dashboard' ? <Dashboard /> : null}
             {current === '/work-inv' ? <WorkInv /> : null}
-            {current === '/new-invoice' ? (
-              <section className="page narrow">
-                <header className="page-head">
-                  <div>
-                    <h2 className="page-title">{t.navNewInvoice}</h2>
-                    <p className="page-sub">{t.newInvoiceIntro}</p>
-                  </div>
-                </header>
-                <JobForm mode="copy" />
-              </section>
+            {current === '/invoices' ? (
+              <Invoices
+                key={search}
+                initialQuery={params.get('q') ?? ''}
+                initialView={params.get('view') === 'voids' ? 'voids' : 'all'}
+              />
             ) : null}
-            {current === '/invoices' ? <Invoices key={search} initialQuery={new URLSearchParams(search).get('q') ?? ''} /> : null}
-            {current === '/void-requests' ? <VoidRequests /> : null}
             {current === '/work-orders' ? <WorkOrders /> : null}
-            {current === '/team' ? <Team /> : null}
+            {current === '/settings' ? <Settings key={search} section={settingsSectionFrom(params)} /> : null}
           </Suspense>
         </main>
       </div>

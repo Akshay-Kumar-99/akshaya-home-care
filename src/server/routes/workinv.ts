@@ -4,10 +4,16 @@ import { CopySchema, EditPendingSchema, ReasonSchema } from '../../shared/schema
 import { isUuid, readJson, readJsonOrIssues } from '../http/body.ts';
 import type { AppEnv } from '../http/context.ts';
 import { requireAuth, requirePermission, STEP_UP_WINDOW_SEC } from '../http/middleware.ts';
-import { copyMessage, editPending, listPending, listRecent, reject, requeue } from '../services/workinv.ts';
+import { copyMessage, editPending, listPending, listRecent, reject, requeue, type Business } from '../services/workinv.ts';
 
-async function officialPhone(c: Context<AppEnv>): Promise<string> {
-  return c.get('deps').settings.get<string>('official_phone', '+919841459657');
+/** The phone and Terms & Conditions link printed on every message (cached settings). */
+async function business(c: Context<AppEnv>): Promise<Business> {
+  const settings = c.get('deps').settings;
+  const [officialPhoneE164, termsUrl] = await Promise.all([
+    settings.get<string>('official_phone', '+919841459657'),
+    settings.get<string | null>('terms_url', null),
+  ]);
+  return { officialPhoneE164, termsUrl: termsUrl || null };
 }
 
 async function alertHours(c: Context<AppEnv>): Promise<number> {
@@ -28,7 +34,7 @@ export const workInvRoutes = new Hono<AppEnv>()
 
   .get('/pending', async (c) => {
     const body: QueueResponse = {
-      items: await listPending(c.get('deps').pool, await officialPhone(c)),
+      items: await listPending(c.get('deps').pool, await business(c)),
       queueAlertHours: await alertHours(c),
     };
     return c.json(body);
@@ -36,7 +42,7 @@ export const workInvRoutes = new Hono<AppEnv>()
 
   .get('/recent', async (c) => {
     const body: QueueResponse = {
-      items: await listRecent(c.get('deps').pool, await officialPhone(c)),
+      items: await listRecent(c.get('deps').pool, await business(c)),
       queueAlertHours: await alertHours(c),
     };
     return c.json(body);

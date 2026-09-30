@@ -74,9 +74,13 @@ test.describe.serial('technician and admin technician on Android', () => {
 
     const clip = await page.evaluate(() => navigator.clipboard.readText());
     expect(clip).toContain(`Hello ${customer},`);
-    expect(clip).toMatch(/Invoice Number: INV-\d{5,}/);
-    expect(clip).toContain('Invoice Total: ₹2,300.00');
-    expect(clip).not.toMatch(/spare|profit/i);
+    expect(clip).toMatch(/\*Invoice:\* INV-\d{5,}/);
+    expect(clip).toContain('*Amount:* ₹2,300.00');
+    expect(clip).toMatch(/^\*Payment:\* Paid$/m);
+    expect(clip).not.toMatch(/\(UPI\)|\(Cash\)/);
+    expect(clip).toContain('*Warranty:* 90 days on our service, till');
+    expect(clip).not.toContain('----');
+    expect(clip).not.toMatch(/spare cost|profit|margin/i);
 
     await expect(card).toHaveCount(0);
     await page.getByRole('tab', { name: 'Recently copied' }).click();
@@ -88,6 +92,37 @@ test.describe.serial('technician and admin technician on Android', () => {
     await signIn(page, account('Technician 1'));
     await page.getByRole('button', { name: 'My Jobs' }).click();
     await expect(page.locator('article', { hasText: customer }).getByText(/Issued · INV-\d+/)).toBeVisible();
+  });
+
+  test('warranty service: the repeat call is linked to the first invoice, free, and survives a reload', async ({ page }) => {
+    await signIn(page, account('Technician 1'));
+    await page.getByLabel('Customer phone').fill(phone);
+    await expect(page.getByText('Recent visits')).toBeVisible();
+    const tick = page.getByRole('checkbox', { name: /Warranty service/ });
+    await tick.check();
+    await expect(page.getByRole('radio', { name: 'AC (split)' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByLabel('Service done')).toHaveValue(/^Warranty service, Gas refilling/);
+    await expect(page.getByText('No charge: nothing to collect.')).toBeVisible();
+    await expect(page.locator('.action-total')).toContainText('No charge');
+    // Service chips toggle: tap to add, tap again to remove.
+    await expect(page.getByRole('button', { name: 'Gas refilling' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Not cooling' }).click();
+    await expect(page.getByLabel('Service done')).toHaveValue(/, Not cooling$/);
+    await page.getByRole('button', { name: 'Not cooling' }).click();
+    await expect(page.getByLabel('Service done')).not.toHaveValue(/Not cooling/);
+    await page.screenshot(shots('03a-warranty-service'));
+
+    // The unfinished form comes back after the app reloads (e.g. after a call).
+    await page.reload();
+    await expect(page.getByText('Your unfinished invoice was restored.')).toBeVisible();
+    await expect(page.getByLabel('Customer phone')).toHaveValue(phone);
+    await expect(page.getByRole('checkbox', { name: /Warranty service/ })).toBeChecked();
+
+    await page.getByRole('button', { name: 'Save to Server' }).click();
+    await expect(page.getByText('Submitted. The office will send the invoice to the customer.')).toBeVisible();
+    await expect(page.getByLabel('Customer phone')).toHaveValue('');
+    await page.getByRole('button', { name: 'My Jobs' }).click();
+    await expect(page.locator('article', { hasText: customer }).getByText('Warranty service', { exact: true })).toBeVisible();
   });
 
   test('offline: the job is kept on the phone and sent when the connection returns', async ({ page, context }) => {

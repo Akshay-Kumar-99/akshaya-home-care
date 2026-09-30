@@ -1,6 +1,8 @@
 import type pg from 'pg';
+import type { CustomerLookup } from '../../shared/api-types.ts';
 import { withActorContext } from '../db/actor-context.ts';
 import type { Actor } from './types.ts';
+import { liveWarranties, recentVisits } from './warranty.ts';
 
 export interface Lookups {
   applianceTypes: Array<{ key: string; label: string }>;
@@ -49,12 +51,12 @@ export class LookupsCache {
   }
 }
 
-/** Known phone → name and area, so the form auto-fills for repeat customers. */
-export async function findCustomerByPhone(
-  pool: pg.Pool,
-  actor: Actor,
-  phoneE164: string,
-): Promise<{ name: string; areaId: string | null } | null> {
+/**
+ * Known phone → name and area (the form auto-fills for repeat customers), plus the last visits
+ * and any live service warranties (owner, 30 Sep 2026: "Warranty service" on the form).
+ * Visits and warranties carry no amounts; see services/warranty.ts.
+ */
+export async function findCustomerByPhone(pool: pg.Pool, actor: Actor, phoneE164: string): Promise<CustomerLookup> {
   const res = await withActorContext(pool, actor, (client) =>
     client.query<{ name: string; area_id: string | null }>(
       'SELECT name, area_id FROM customers WHERE phone_e164 = $1',
@@ -62,5 +64,7 @@ export async function findCustomerByPhone(
     ),
   );
   const row = res.rows[0];
-  return row ? { name: row.name, areaId: row.area_id } : null;
+  if (!row) return { found: false };
+  const [visits, warranties] = await Promise.all([recentVisits(pool, phoneE164), liveWarranties(pool, phoneE164)]);
+  return { found: true, name: row.name, areaId: row.area_id, visits, warranties };
 }

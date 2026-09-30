@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { CreateUserSchema, SetCredentialsSchema, UpdateUserSchema } from '../../shared/schemas.ts';
+import { BusinessSettingsSchema, CreateUserSchema, SetCredentialsSchema, UpdateUserSchema } from '../../shared/schemas.ts';
+import { readJsonOrIssues } from '../http/body.ts';
 import type { AppEnv } from '../http/context.ts';
 import { requireAuth, requirePermission, requireRecentPin } from '../http/middleware.ts';
 import {
@@ -15,6 +16,7 @@ import {
   updateUser,
   type AdminResult,
 } from '../services/users.ts';
+import { readBusinessSettings, updateBusinessSettings } from '../services/settings.ts';
 
 const IdParam = z.uuid();
 const ReasonBody = z.object({ reason: z.string().trim().min(1).max(300) });
@@ -117,6 +119,20 @@ export const adminRoutes = new Hono<AppEnv>()
     // Revoking one's own sessions keeps the current one.
     const keep = id === actor.id ? entry.id : undefined;
     return respond(c, await revokeUserSessions(deps.pool, deps.sessions, actor, id, keep));
+  })
+
+  // Business settings printed on every invoice: the Terms & Conditions link and the phone.
+  .get('/settings', requirePermission('settings.manage'), async (c) =>
+    c.json(await readBusinessSettings(c.get('deps').settings)),
+  )
+
+  .patch('/settings', requirePermission('settings.manage'), requireRecentPin(), async (c) => {
+    const body = await readJsonOrIssues(c, BusinessSettingsSchema);
+    if (!body.ok) return c.json({ error: 'invalid_request', issues: body.issues }, 422);
+    const deps = c.get('deps');
+    const saved = await updateBusinessSettings(deps.pool, deps.settings, c.get('auth').actor, body.data);
+    deps.queue.changed(); // Work Inv previews show the new text
+    return c.json(saved);
   })
 
   .get('/login-history', requirePermission('audit.view'), async (c) => {

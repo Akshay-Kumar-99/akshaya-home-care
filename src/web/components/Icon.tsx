@@ -113,6 +113,8 @@ const PATHS: Record<string, ReactNode> = {
     <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16M16 16h5v5" />
   ),
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  chevronRight: <path d="m9 18 6-6-6-6" />,
+  chevronLeft: <path d="m15 18-6-6 6-6" />,
   lock: (
     <>
       <rect x="3" y="11" width="18" height="11" rx="2" />
@@ -127,6 +129,7 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   play: <path d="M6 3l14 9-14 9V3Z" />,
+  sliders: <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />,
   calendar: (
     <>
       <rect x="3" y="4" width="18" height="18" rx="2" />

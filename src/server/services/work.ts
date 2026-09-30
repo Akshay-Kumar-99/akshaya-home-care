@@ -6,6 +6,7 @@ import { withActorContext } from '../db/actor-context.ts';
 import { withTransaction } from '../db/client.ts';
 import { DuplicateSubmission, findByIdempotencyKey, isDuplicateSubmission } from './submissions.ts';
 import type { Actor } from './types.ts';
+import { assertWarrantyCover, InvalidWarranty } from './warranty.ts';
 
 // Work allocation. The Master or Admin Technician creates a work order and assigns it to an
 // "Invoice + Work allocation" technician. The technician sees it under Works assigned, starts
@@ -117,7 +118,7 @@ export async function listWorkTechnicians(pool: pg.Pool): Promise<WorkTechnician
   return res.rows;
 }
 
-export type WorkError = 'not_found' | 'wrong_state' | 'invalid_assignee' | 'invalid_reference';
+export type WorkError = 'not_found' | 'wrong_state' | 'invalid_assignee' | 'invalid_reference' | 'invalid_warranty';
 export type WorkResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: WorkError };
 
 /** Locks the assignee row so their label can't change underneath the assignment. */
@@ -365,6 +366,13 @@ export async function completeWork(
 
       const totalPaise = rupeesToPaise(input.totalRupees);
       const spareCostPaise = rupeesToPaise(input.spareCostRupees);
+      if (input.warrantyOfInvoiceId) {
+        const phone = await client.query<{ phone_e164: string }>(
+          'SELECT c.phone_e164 FROM jobs j JOIN customers c ON c.id = j.customer_id WHERE j.id = $1',
+          [jobId],
+        );
+        await assertWarrantyCover(client, input.warrantyOfInvoiceId, phone.rows[0]!.phone_e164);
+      }
       await client.query(
         `UPDATE jobs SET status = 'completed', completed_at = now(), started_at = coalesce(started_at, now()),
                 service_description = $2, brand_id = coalesce($3, brand_id), updated_at = now()
@@ -373,15 +381,15 @@ export async function completeWork(
       );
       const invoice = await client.query<{ id: string }>(
         `INSERT INTO invoices (job_id, idempotency_key, total_paise, spare_cost_paise,
-                               negative_margin_flag, submitted_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
+                               negative_margin_flag, submitted_by, warranty_of_invoice_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (idempotency_key) DO NOTHING
          RETURNING id`,
-        [jobId, input.idempotencyKey, totalPaise, spareCostPaise, spareCostPaise > totalPaise, actor.id],
+        [jobId, input.idempotencyKey, totalPaise, spareCostPaise, spareCostPaise > totalPaise, actor.id, input.warrantyOfInvoiceId],
       );
       const invoiceId = invoice.rows[0]?.id;
       if (!invoiceId) throw new DuplicateSubmission();
-      if (input.payment.status === 'paid') {
+      if (input.payment.status === 'paid' && totalPaise > 0) {
         await client.query(
           `INSERT INTO payments (invoice_id, mode, amount_paise, collected_by_user_id)
            VALUES ($1, $2, $3, $4)`,
@@ -400,6 +408,7 @@ export async function completeWork(
             total_paise: totalPaise,
             spare_cost_paise: spareCostPaise,
             payment: input.payment,
+            warranty_of_invoice_id: input.warrantyOfInvoiceId,
           }),
           actor.ip ?? null,
         ],
@@ -410,6 +419,7 @@ export async function completeWork(
   try {
     return await run();
   } catch (err) {
+    if (err instanceof InvalidWarranty) return { ok: false, error: 'invalid_warranty' };
     // A concurrent request with the same key committed first: answer with its invoice.
     if (isDuplicateSubmission(err)) return run();
     if (isForeignKeyViolation(err)) return { ok: false, error: 'invalid_reference' };

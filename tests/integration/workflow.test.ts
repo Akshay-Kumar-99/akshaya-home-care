@@ -107,7 +107,7 @@ describe.skipIf(!hasTestDatabase)('invoice workflow API (Neon test branch)', () 
       expect(list2.map((s) => s.customerName)).toContain('Only For Tech2');
       expect(list1[0]).toMatchObject({ state: 'submitted', invoiceNumber: null, editedByOffice: false });
       const raw = JSON.stringify(list1);
-      for (const banned of ['preview', 'message', 'grossProfit', 'wa.me', 'Invoice Number:']) {
+      for (const banned of ['preview', 'message', 'grossProfit', 'wa.me', '*Invoice:*']) {
         expect(raw).not.toContain(banned);
       }
     });
@@ -125,9 +125,9 @@ describe.skipIf(!hasTestDatabase)('invoice workflow API (Neon test branch)', () 
       expect(times).toEqual([...times].sort((a, b) => a - b));
       const card = items.find((i) => i.phone === '+919840022222')!;
       expect(card.possibleDuplicate).toBe(true);
-      expect(card.preview).toContain('Invoice Number: (assigned on copy)');
-      expect(card.preview).toContain('Invoice Total: ₹1,500.00');
-      expect(card.preview).not.toMatch(/spare|profit/i);
+      expect(card.preview).toContain('*Invoice:* (assigned on copy)');
+      expect(card.preview).toContain('*Amount:* ₹1,500.00');
+      expect(card.preview).not.toMatch(/spare cost|profit|margin/i);
       expect(items.some((i) => i.negativeMargin)).toBe(true);
     });
 
@@ -139,7 +139,7 @@ describe.skipIf(!hasTestDatabase)('invoice workflow API (Neon test branch)', () 
       const copied = await admin.post(`/api/workinv/${invoiceId}/copy`, { expect: 'submitted' });
       expect(copied.status).toBe(200);
       expect(copied.json).toMatchObject({ outcome: 'issued', invoiceNumber: expected, customerName: 'Copy Test' });
-      expect(copied.json.message).toContain(`Invoice Number: INV-${expected}`);
+      expect(copied.json.message).toContain(`*Invoice:* INV-${expected}`);
 
       const second = await master.post(`/api/workinv/${invoiceId}/copy`, { expect: 'submitted' });
       expect(second.status).toBe(409);
@@ -334,7 +334,7 @@ describe.skipIf(!hasTestDatabase)('invoice workflow API (Neon test branch)', () 
         const res = await tech1.get(path);
         expect(res.status).toBe(200);
         const raw = JSON.stringify(res.json);
-        for (const banned of ['preview', 'rendered', '"message"', 'grossProfit', 'profit.view', 'wa.me', 'Invoice Number:']) {
+        for (const banned of ['preview', 'rendered', '"message"', 'grossProfit', 'profit.view', 'wa.me', '*Invoice:*']) {
           expect({ path, banned, found: raw.includes(banned) }).toEqual({ path, banned, found: false });
         }
       }

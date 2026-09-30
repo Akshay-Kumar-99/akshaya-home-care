@@ -15,6 +15,8 @@ export interface SubmissionPayload {
   spareCostRupees: number;
   confirmNegativeMargin: boolean;
   payment: { status: 'paid'; mode: 'cash' | 'upi' | 'other' } | { status: 'unpaid' };
+  /** Warranty service: the invoice whose warranty covers this visit. */
+  warrantyOfInvoiceId?: string | null;
 }
 
 export interface OutboxItem {

@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import type { PaymentMode } from '../../shared/api-types.ts';
 import { INVOICE_TEMPLATE_VERSION, renderInvoiceMessage } from '../../shared/invoice-template.ts';
 import { withTransaction } from '../db/client.ts';
 import type { Actor } from './types.ts';
@@ -27,6 +28,39 @@ interface LockedInvoice {
   issued_at: Date | null;
   issued_by_name: string | null;
   customer_name: string;
+  appliance_label: string;
+  service_description: string;
+  payment_mode: PaymentMode | null;
+  warranty_until: string;
+  warranty_for_number: number | null;
+}
+
+/**
+ * Everything the customer message needs, for one invoice. A warranty service shows the
+ * covering invoice's number and warranty end date. Shared with the Work Inv preview.
+ */
+export const MESSAGE_FIELDS = `
+  c.name AS customer_name, apt.label AS appliance_label, j.service_description,
+  (SELECT p.mode FROM payments p WHERE p.invoice_id = i.id ORDER BY p.received_at LIMIT 1) AS payment_mode,
+  coalesce(cover.warranty_expires_at, i.warranty_expires_at) AS warranty_until,
+  cover.invoice_number AS warranty_for_number`;
+
+export const MESSAGE_JOINS = `
+  JOIN jobs j ON j.id = i.job_id
+  JOIN customers c ON c.id = j.customer_id
+  JOIN appliance_types apt ON apt.key = j.appliance_type_key
+  LEFT JOIN invoices cover ON cover.id = i.warranty_of_invoice_id`;
+
+/** Official phone and Terms & Conditions link, read in the issuing transaction. */
+export async function businessSettings(client: pg.PoolClient | pg.Pool): Promise<{ officialPhoneE164: string; termsUrl: string | null }> {
+  const res = await client.query<{ key: string; value: unknown }>(
+    "SELECT key, value FROM settings WHERE key IN ('official_phone', 'terms_url')",
+  );
+  const values = new Map(res.rows.map((r) => [r.key, r.value]));
+  const officialPhoneE164 = values.get('official_phone');
+  if (typeof officialPhoneE164 !== 'string') throw new Error('settings.official_phone is missing');
+  const terms = values.get('terms_url');
+  return { officialPhoneE164, termsUrl: typeof terms === 'string' && terms ? terms : null };
 }
 
 /**
@@ -58,10 +92,9 @@ export async function issueWithClient(
 
   const current = await client.query<LockedInvoice>(
     `SELECT i.id, i.state, i.invoice_number, i.rendered_message, i.invoice_date, i.total_paise,
-            i.submitted_by, i.issued_at, u.display_name AS issued_by_name, c.name AS customer_name
+            i.submitted_by, i.issued_at, u.display_name AS issued_by_name, ${MESSAGE_FIELDS}
      FROM invoices i
-     JOIN jobs j ON j.id = i.job_id
-     JOIN customers c ON c.id = j.customer_id
+     ${MESSAGE_JOINS}
      LEFT JOIN users u ON u.id = i.issued_by
      WHERE i.id = $1`,
     [invoiceId],
@@ -83,11 +116,7 @@ export async function issueWithClient(
     return { kind: 'not_issuable', invoiceId: inv.id, state: inv.state };
   }
 
-  const phone = await client.query<{ value: string }>(
-    "SELECT value FROM settings WHERE key = 'official_phone'",
-  );
-  const officialPhoneE164 = phone.rows[0]?.value;
-  if (!officialPhoneE164) throw new Error('settings.official_phone is missing');
+  const business = await businessSettings(client);
 
   const counter = await client.query<{ n: number }>(
     'UPDATE invoice_counter SET next_value = next_value + 1 WHERE id = 1 RETURNING next_value - 1 AS n',
@@ -100,7 +129,13 @@ export async function issueWithClient(
     invoiceNumber,
     invoiceDate: inv.invoice_date,
     totalPaise: inv.total_paise,
-    officialPhoneE164,
+    officialPhoneE164: business.officialPhoneE164,
+    applianceLabel: inv.appliance_label,
+    serviceDescription: inv.service_description,
+    paymentMode: inv.payment_mode,
+    warrantyUntil: inv.warranty_until,
+    warrantyForInvoiceNumber: inv.warranty_for_number,
+    termsUrl: business.termsUrl,
   });
   const selfIssued = inv.submitted_by === actor.id;
 

@@ -5,6 +5,12 @@ import { rupeesToPaise } from '../../shared/money.ts';
 import type { EditPendingInput } from '../../shared/schemas.ts';
 import { withTransaction } from '../db/client.ts';
 import { issueWithClient } from './issue.ts';
+
+/** What every customer message prints besides the invoice itself (from settings). */
+export interface Business {
+  officialPhoneE164: string;
+  termsUrl: string | null;
+}
 import type { Actor } from './types.ts';
 
 // Technician Work Inv: the checkers' queue. Routes require `workinv.use` (and `invoice.reject`
@@ -35,6 +41,8 @@ interface CardRow {
   edited_flag: boolean;
   possible_duplicate: boolean;
   rendered_message: string | null;
+  warranty_until: string;
+  warranty_for_number: number | null;
   copied_by_name: string | null;
   last_copied_at: Date | null;
   copy_count: number;
@@ -49,6 +57,8 @@ const CARD_SELECT = `
          j.brand_id, b.name AS brand_name, j.service_description,
          i.total_paise, i.spare_cost_paise, pay.mode AS payment_mode,
          i.negative_margin_flag, i.edited_flag, i.rendered_message,
+         coalesce(cover.warranty_expires_at, i.warranty_expires_at) AS warranty_until,
+         cover.invoice_number AS warranty_for_number,
          lc.display_name AS copied_by_name, i.last_copied_at, i.copy_count,
          EXISTS (
            SELECT 1 FROM invoices i2 JOIN jobs j2 ON j2.id = i2.job_id
@@ -65,11 +75,12 @@ const CARD_SELECT = `
   LEFT JOIN areas a ON a.id = j.area_id
   LEFT JOIN brands b ON b.id = j.brand_id
   LEFT JOIN users lc ON lc.id = i.last_copied_by
+  LEFT JOIN invoices cover ON cover.id = i.warranty_of_invoice_id
   LEFT JOIN LATERAL (
     SELECT mode FROM payments WHERE invoice_id = i.id ORDER BY received_at LIMIT 1
   ) pay ON true`;
 
-function toCard(row: CardRow, officialPhoneE164: string): QueueCard {
+function toCard(row: CardRow, business: Business): QueueCard {
   const preview =
     row.rendered_message ??
     renderInvoiceMessage({
@@ -77,7 +88,13 @@ function toCard(row: CardRow, officialPhoneE164: string): QueueCard {
       invoiceNumber: null,
       invoiceDate: row.invoice_date,
       totalPaise: row.total_paise,
-      officialPhoneE164,
+      officialPhoneE164: business.officialPhoneE164,
+      applianceLabel: row.appliance_label,
+      serviceDescription: row.service_description,
+      paymentMode: row.payment_mode,
+      warrantyUntil: row.warranty_until,
+      warrantyForInvoiceNumber: row.warranty_for_number,
+      termsUrl: business.termsUrl,
     });
   return {
     id: row.id,
@@ -102,6 +119,7 @@ function toCard(row: CardRow, officialPhoneE164: string): QueueCard {
     negativeMargin: row.negative_margin_flag,
     edited: row.edited_flag,
     possibleDuplicate: row.possible_duplicate,
+    warrantyForNumber: row.warranty_for_number,
     preview,
     copiedByName: row.copied_by_name,
     copiedAt: row.last_copied_at?.toISOString() ?? null,
@@ -110,18 +128,18 @@ function toCard(row: CardRow, officialPhoneE164: string): QueueCard {
 }
 
 /** Pending: submitted items plus issued items put back in the queue. Oldest first. */
-export async function listPending(pool: pg.Pool, officialPhoneE164: string): Promise<QueueCard[]> {
+export async function listPending(pool: pg.Pool, business: Business): Promise<QueueCard[]> {
   const res = await pool.query<CardRow>(
     `${CARD_SELECT}
      WHERE i.state = 'submitted' OR (i.state = 'issued' AND i.requeued_at IS NOT NULL)
      ORDER BY i.submitted_at ASC
      LIMIT 200`,
   );
-  return res.rows.map((r) => toCard(r, officialPhoneE164));
+  return res.rows.map((r) => toCard(r, business));
 }
 
 /** Recently copied: issued and copied in the last 48 hours, not put back. Newest first. */
-export async function listRecent(pool: pg.Pool, officialPhoneE164: string): Promise<QueueCard[]> {
+export async function listRecent(pool: pg.Pool, business: Business): Promise<QueueCard[]> {
   const res = await pool.query<CardRow>(
     `${CARD_SELECT}
      WHERE i.state = 'issued' AND i.requeued_at IS NULL
@@ -129,7 +147,7 @@ export async function listRecent(pool: pg.Pool, officialPhoneE164: string): Prom
      ORDER BY i.last_copied_at DESC
      LIMIT 200`,
   );
-  return res.rows.map((r) => toCard(r, officialPhoneE164));
+  return res.rows.map((r) => toCard(r, business));
 }
 
 export type CopyResult =

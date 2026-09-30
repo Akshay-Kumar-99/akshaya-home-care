@@ -16,6 +16,7 @@ import {
   updateWorkOrder,
   type WorkError,
 } from '../services/work.ts';
+import { INVALID_WARRANTY_ISSUE } from '../services/warranty.ts';
 
 const ListQuery = z.object({
   view: z.enum(['open', 'completed', 'cancelled']).default('open'),
@@ -24,6 +25,7 @@ const ListQuery = z.object({
 
 function fail(c: Context<AppEnv>, error: WorkError) {
   const status = error === 'not_found' ? 404 : error === 'wrong_state' ? 409 : 422;
+  if (error === 'invalid_warranty') return c.json({ error, issues: [INVALID_WARRANTY_ISSUE] }, status);
   return c.json({ error }, status);
 }
 

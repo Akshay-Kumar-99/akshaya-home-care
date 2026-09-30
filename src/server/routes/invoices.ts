@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ReasonSchema, SubmissionInputSchema } from '../../shared/schemas.ts';
 import { isUuid, readJson, readJsonOrIssues } from '../http/body.ts';
 import type { AppEnv } from '../http/context.ts';
+import { INVALID_WARRANTY_ISSUE, InvalidWarranty } from '../services/warranty.ts';
 import { requireAuth, requirePermission, requireRecentPin } from '../http/middleware.ts';
 import {
   decideVoidRequest,
@@ -62,6 +63,7 @@ export const invoiceRoutes = new Hono<AppEnv>()
         phone: result.phone,
       });
     } catch (err) {
+      if (err instanceof InvalidWarranty) return c.json({ error: 'invalid_warranty', issues: [INVALID_WARRANTY_ISSUE] }, 422);
       if ((err as { code?: string }).code === '23503') return c.json({ error: 'invalid_reference' }, 422);
       throw err;
     }

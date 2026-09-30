@@ -2722,6 +2722,137 @@ input.mono {
   cursor: default;
 }
 
+.banner-info {
+  background: var(--info-bg);
+  color: var(--info);
+  align-items: center;
+}
+
+.banner-info .link-button {
+  min-height: 0;
+  padding: 0;
+}
+
+/* Job form: the customer's recent visits and the "Warranty service" tick box. */
+.visit-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.visit-history .meta {
+  font-size: 0.875rem;
+}
+
+.warranty-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: var(--radius-sm);
+}
+
+.warranty-box .check-row {
+  border-color: color-mix(in srgb, var(--cyan) 45%, transparent);
+  background: var(--chip-on-bg);
+}
+
+/* Settings home: one square tile per section (Team, Invoice Template, and later ones). */
+.settings-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+@media (min-width: 760px) {
+  .settings-tiles {
+    grid-template-columns: repeat(auto-fill, 220px);
+  }
+}
+
+.settings-tile {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px;
+  text-align: left;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--grad-soft), var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.settings-tile:hover {
+  border-color: color-mix(in srgb, var(--cyan) 55%, transparent);
+  transform: translateY(-2px);
+}
+
+.settings-tile-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: auto;
+  border-radius: 16px;
+  background: var(--grad);
+  color: var(--accent-ink);
+}
+
+.settings-tile-title {
+  font-size: 1.0625rem;
+  font-weight: 750;
+}
+
+.settings-tile-desc {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  padding-right: 18px;
+}
+
+.settings-tile-go {
+  position: absolute;
+  right: 14px;
+  bottom: 16px;
+  color: var(--muted);
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0;
+  margin-bottom: 2px;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-open {
+  align-self: flex-start;
+}
+
+@media (min-width: 1024px) {
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
 .table .when {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;

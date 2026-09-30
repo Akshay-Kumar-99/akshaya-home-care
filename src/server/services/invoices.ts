@@ -33,6 +33,7 @@ interface MineRow {
   payment_mode: PaymentMode | null;
   rejected_reason: string | null;
   edited_flag: boolean;
+  warranty_service: boolean;
 }
 
 /**
@@ -46,7 +47,8 @@ export async function listMine(pool: pg.Pool, actor: Actor, limit: number): Prom
       `SELECT i.id, i.state, i.invoice_number, i.invoice_date, i.submitted_at,
               c.name AS customer_name, c.phone_e164, a.name AS area_name, apt.label AS appliance_label,
               b.name AS brand_name, j.service_description, i.total_paise, i.spare_cost_paise,
-              pay.mode AS payment_mode, i.rejected_reason, i.edited_flag
+              pay.mode AS payment_mode, i.rejected_reason, i.edited_flag,
+              i.warranty_of_invoice_id IS NOT NULL AS warranty_service
        FROM invoices i
        JOIN jobs j ON j.id = i.job_id
        JOIN customers c ON c.id = j.customer_id
@@ -77,6 +79,7 @@ export async function listMine(pool: pg.Pool, actor: Actor, limit: number): Prom
     paymentMode: r.payment_mode,
     rejectedReason: r.rejected_reason,
     editedByOffice: r.edited_flag,
+    warrantyService: r.warranty_service,
   }));
 }
 
@@ -100,6 +103,7 @@ interface RowData {
   edited_flag: boolean;
   negative_margin_flag: boolean;
   void_request_pending: boolean;
+  warranty_for_number: number | null;
 }
 
 const ROW_SELECT = `
@@ -108,7 +112,8 @@ const ROW_SELECT = `
          a.name AS area_name, apt.label AS appliance_label, i.total_paise, i.spare_cost_paise,
          pay.mode AS payment_mode, i.self_issued_flag, i.edited_flag, i.negative_margin_flag,
          EXISTS (SELECT 1 FROM void_requests vr WHERE vr.invoice_id = i.id AND vr.status = 'pending')
-           AS void_request_pending
+           AS void_request_pending,
+         (SELECT w.invoice_number FROM invoices w WHERE w.id = i.warranty_of_invoice_id) AS warranty_for_number
   FROM invoices i
   JOIN jobs j ON j.id = i.job_id
   JOIN customers c ON c.id = j.customer_id
@@ -137,6 +142,7 @@ function toRow(r: RowData): InvoiceRow {
     edited: r.edited_flag,
     negativeMargin: r.negative_margin_flag,
     voidRequestPending: r.void_request_pending,
+    warrantyForNumber: r.warranty_for_number,
   };
 }
 
@@ -225,9 +231,10 @@ export async function getInvoice(pool: pg.Pool, invoiceId: string): Promise<Invo
   >(
     `SELECT r.*, j.service_description, b.name AS brand_name, i.rendered_message,
             iu.display_name AS issued_by_name, i.issued_at, i.rejected_reason, i.void_reason,
-            i.warranty_expires_at
+            coalesce(cover.warranty_expires_at, i.warranty_expires_at) AS warranty_expires_at
      FROM (${ROW_SELECT} WHERE i.id = $1) r
      JOIN invoices i ON i.id = r.id
+     LEFT JOIN invoices cover ON cover.id = i.warranty_of_invoice_id
      JOIN jobs j ON j.id = i.job_id
      LEFT JOIN brands b ON b.id = j.brand_id
      LEFT JOIN users iu ON iu.id = i.issued_by`,

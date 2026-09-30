@@ -84,40 +84,74 @@ describe('the single invoice message template', () => {
     invoiceDate: '2026-09-28',
     totalPaise: 230000,
     officialPhoneE164: '+919841459657',
+    applianceLabel: 'AC (split)',
+    serviceDescription: ' Gas refilling ',
+    paymentMode: 'upi' as const,
+    warrantyUntil: '2026-12-27',
+    warrantyForInvoiceNumber: null,
+    termsUrl: 'https://drive.google.com/file/d/abc/view',
   };
 
-  it('renders exactly the approved format', () => {
+  it('renders exactly the approved format (v2)', () => {
     expect(renderInvoiceMessage(input)).toBe(
       [
+        '*AKSHAYA HOME CARE*',
+        'AC · Fridge · Washing Machine',
+        '',
         'Hello Ravi Kumar,',
+        'Thank you for choosing us.',
         '',
-        'Here are the details of your invoice from Akshaya Home Care.',
-        '------------------------------------',
-        'Invoice Number: INV-48213',
-        'Invoice Date: 28/09/2026',
-        'Invoice Total: ₹2,300.00',
-        '------------------------------------',
-        '90-day warranty on the same fault serviced (parts excluded).',
-        'For any queries, please call or message us on +91 98414 59657.',
+        '*Invoice:* INV-48213',
+        '*Date:* 28/09/2026',
+        '*Service:* AC (split) - Gas refilling',
+        '*Amount:* ₹2,300.00',
+        '*Payment:* Paid',
         '',
-        'Thanks for choosing Akshaya Home Care!',
+        '*Warranty:* 90 days on our service, till 27/12/2026. Spare parts are not covered.',
         '',
-        'Best regards,',
-        'Akshaya Home Care',
+        '*Terms & Conditions:* https://drive.google.com/file/d/abc/view',
+        '',
+        'Queries: call or message +91 98414 59657',
+        '- Akshaya Home Care',
       ].join('\n'),
     );
-    expect(INVOICE_TEMPLATE_VERSION).toBe(1);
+    expect(INVOICE_TEMPLATE_VERSION).toBe(2);
+  });
+
+  it('has no long unbroken rules that wrap on a phone', () => {
+    for (const line of renderInvoiceMessage(input).split('\n')) {
+      for (const word of line.split(' ')) if (!word.startsWith('https://')) expect(word.length).toBeLessThanOrEqual(24);
+    }
+  });
+
+  it('shows "Pending" when not paid, and leaves out the terms line when no link is set', () => {
+    const text = renderInvoiceMessage({ ...input, paymentMode: null, termsUrl: null });
+    expect(text).toContain('*Payment:* Pending');
+    expect(text).not.toContain('Terms');
+  });
+
+  it('renders a free warranty service linked to the covering invoice', () => {
+    const text = renderInvoiceMessage({ ...input, totalPaise: 0, paymentMode: null, warrantyForInvoiceNumber: 48100 });
+    expect(text).toContain('*Warranty service* for INV-48100');
+    expect(text).toContain('*Amount:* No charge');
+    expect(text).not.toContain('*Payment:*');
+    expect(text).toContain('covered under INV-48100 till 27/12/2026');
+  });
+
+  it('shows a visit charge on a paid warranty service', () => {
+    const text = renderInvoiceMessage({ ...input, totalPaise: 30000, paymentMode: 'cash', warrantyForInvoiceNumber: 48100 });
+    expect(text).toContain('*Visit charge:* ₹300.00');
+    expect(text).toContain('*Payment:* Paid');
+    expect(text).not.toMatch(/cash|upi/i);
   });
 
   it('shows the placeholder in previews before a number is assigned', () => {
-    expect(renderInvoiceMessage({ ...input, invoiceNumber: null })).toContain(
-      'Invoice Number: (assigned on copy)',
-    );
+    expect(renderInvoiceMessage({ ...input, invoiceNumber: null })).toContain('*Invoice:* (assigned on copy)');
   });
 
   it('never mentions spare cost, profit or margin', () => {
     const text = renderInvoiceMessage(input).toLowerCase();
-    for (const word of ['spare', 'profit', 'margin', 'cost']) expect(text).not.toContain(word);
+    for (const word of ['spare cost', 'profit', 'margin', 'cost price']) expect(text).not.toContain(word);
   });
 
   it('formats numbers as INV-<integer> with no padding', () => {

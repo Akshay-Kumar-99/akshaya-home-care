@@ -198,8 +198,7 @@ export async function overview(pool: pg.Pool, from: string, to: string): Promise
       `SELECT
          (SELECT count(*)::int FROM invoices i WHERE ${ISSUED_IN_RANGE} AND i.self_issued_flag) AS self_issued,
          (SELECT count(*)::int FROM invoices i WHERE ${ISSUED_IN_RANGE} AND i.negative_margin_flag) AS negative,
-         (SELECT count(*)::int FROM warranty_callbacks_v w
-            WHERE (w.completed_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date) AS callbacks,
+         (SELECT count(*)::int FROM invoices i WHERE ${ISSUED_IN_RANGE} AND i.warranty_of_invoice_id IS NOT NULL) AS callbacks,
          (SELECT count(*)::int FROM jobs j
             WHERE j.status = 'completed'
               AND (j.completed_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date) AS completed,

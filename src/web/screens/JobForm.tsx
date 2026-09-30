@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import type { CopyResponse, LookupsResponse, WorkOrder } from '../../shared/api-types.ts';
+import type { CopyResponse, CustomerLookup, LookupsResponse, WarrantyCover, WorkOrder } from '../../shared/api-types.ts';
 import { formatInvoiceNumber } from '../../shared/invoice-template.ts';
 import { normalizeIndianMobile } from '../../shared/phone.ts';
 import { useFeedback } from '../app/feedback.tsx';
@@ -10,10 +10,11 @@ import { Chips, Combobox, Field, MoneyInput, Section, Skeleton } from '../compon
 import { t } from '../i18n/en.ts';
 import { api, ApiError, isNetworkError } from '../lib/api.ts';
 import { copyWhenReady } from '../lib/clipboard.ts';
-import { dateTimeIst, formatPhoneForDisplay, rupeesLabel } from '../lib/format.ts';
+import { dateTimeIst, formatDateDmy, formatPhoneForDisplay, rupeesLabel } from '../lib/format.ts';
 import { useLookups } from '../lib/lookups.ts';
 import { outbox } from '../lib/outbox-idb.ts';
 import type { SubmissionPayload } from '../lib/outbox.ts';
+import { readDraft, writeDraft } from '../lib/drafts.ts';
 
 type PaymentChoice = 'cash' | 'upi' | 'unpaid';
 
@@ -28,6 +29,8 @@ interface FormState {
   spare: string;
   payment: PaymentChoice | null;
   confirmNegative: boolean;
+  /** Warranty service: the covering invoice (owner, 30 Sep 2026). */
+  warrantyOf: string | null;
 }
 
 const EMPTY: FormState = {
@@ -41,9 +44,11 @@ const EMPTY: FormState = {
   spare: '',
   payment: null,
   confirmNegative: false,
+  warrantyOf: null,
 };
 
 type Errors = Partial<Record<keyof FormState, string>>;
+type KnownCustomer = Extract<CustomerLookup, { found: true }>;
 
 function byName<T extends { name: string }>(list: T[], name: string): T | undefined {
   const needle = name.trim().toLowerCase();
@@ -55,9 +60,18 @@ function toRupees(value: string): number | null {
   return /^\d{1,7}$/.test(digits) ? Number(digits) : null;
 }
 
+/** Service text as a list: "Gas refilling, PCB repair" → ["Gas refilling", "PCB repair"]. */
+function serviceParts(text: string): string[] {
+  return text
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 /** Client-side checks for fast feedback; the server validates again. */
 function validate(form: FormState, lookups: LookupsResponse): { errors: Errors; payload?: Omit<SubmissionPayload, 'idempotencyKey'> } {
   const errors: Errors = {};
+  const warranty = form.warrantyOf !== null;
   const phone = normalizeIndianMobile(form.phone);
   if (!phone) errors.phone = t.invalidPhone;
   if (!form.customerName.trim()) errors.customerName = t.required;
@@ -67,14 +81,16 @@ function validate(form: FormState, lookups: LookupsResponse): { errors: Errors; 
   if (form.brand.trim() && !brand) errors.brand = t.chooseFromList;
   if (!form.applianceTypeKey) errors.applianceTypeKey = t.required;
   if (!form.serviceDescription.trim()) errors.serviceDescription = t.required;
-  const total = toRupees(form.total);
-  if (total === null || total < 1) errors.total = form.total ? t.wholeRupees : t.required;
+  // A warranty service is free unless a visit charge is entered.
+  const total = warranty && form.total.trim() === '' ? 0 : toRupees(form.total);
+  if (total === null || (total < 1 && !warranty)) errors.total = form.total ? t.wholeRupees : t.required;
   const spare = form.spare.trim() === '' ? 0 : toRupees(form.spare);
   if (spare === null) errors.spare = t.wholeRupees;
   if (total !== null && spare !== null && spare > total && !form.confirmNegative) {
     errors.confirmNegative = t.negativeMarginConfirm;
   }
-  if (!form.payment) errors.payment = t.required;
+  const free = total === 0;
+  if (!form.payment && !free) errors.payment = t.required;
   if (Object.keys(errors).length > 0) return { errors };
   return {
     errors,
@@ -88,7 +104,8 @@ function validate(form: FormState, lookups: LookupsResponse): { errors: Errors; 
       totalRupees: total!,
       spareCostRupees: spare!,
       confirmNegativeMargin: form.confirmNegative,
-      payment: form.payment === 'unpaid' ? { status: 'unpaid' } : { status: 'paid', mode: form.payment! },
+      payment: free || form.payment === 'unpaid' ? { status: 'unpaid' } : { status: 'paid', mode: form.payment! },
+      warrantyOfInvoiceId: form.warrantyOf,
     },
   };
 }
@@ -104,6 +121,10 @@ function fromWork(work: WorkOrder): FormState {
   };
 }
 
+function sameForm(a: FormState, b: FormState): boolean {
+  return (Object.keys(a) as Array<keyof FormState>).every((k) => a[k] === b[k]);
+}
+
 /**
  * The fast-entry job form (target: under 30 seconds on a phone).
  * mode "submit": technicians' "Save to Server" (offline-safe, goes to the Work Inv queue).
@@ -112,50 +133,79 @@ function fromWork(work: WorkOrder): FormState {
  * mode "copy":   Master / Admin Technician's own jobs, in two taps: "Copy phone" copies the
  *                customer's number (for WhatsApp search), then "Copy invoice" creates the
  *                invoice and copies the message; the user pastes both in WhatsApp themselves.
+ * A known phone shows the customer's recent visits and, if a service warranty is still
+ * running, a "Warranty service" tick box that fills in the covered job (free, or a visit charge).
  */
 export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?: WorkOrder; onDone?: () => void }) {
   const user = useUser();
   const lookups = useLookups();
   const { toast, showCopyFallback } = useFeedback();
-  const [form, setForm] = useState<FormState>(() => (work ? fromWork(work) : EMPTY));
+  const draftKey = `${user.user.id}.${work ? `work.${work.id}` : mode}`;
+  const blank = useMemo(() => (work ? fromWork(work) : EMPTY), [work]);
+  const [restored] = useState(() => {
+    const draft = readDraft<FormState>(draftKey);
+    return draft ? { ...draft, form: { ...EMPTY, ...draft.form } } : null;
+  });
+  const [form, setForm] = useState<FormState>(() => restored?.form ?? blank);
+  const [showRestored, setShowRestored] = useState(restored !== null);
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
-  const [knownCustomer, setKnownCustomer] = useState(false);
-  // One key per job, kept across retries so the server never stores it twice.
-  const keyRef = useRef<string>(crypto.randomUUID());
+  const [customer, setCustomer] = useState<KnownCustomer | null>(null);
+  // One key per job, kept across retries (and a restored form) so the server never stores it twice.
+  const keyRef = useRef<string>(restored?.key ?? crypto.randomUUID());
   const lookedUp = useRef<string | null>(null);
   // Copy mode is two taps: the customer's phone first, then the invoice (owner, 30 Sep 2026).
   const typedPhone = mode === 'copy' ? normalizeIndianMobile(form.phone) : null;
   const phoneStep = usePhoneStep(typedPhone ? `form:${typedPhone}` : null);
   const copyPhone = useCopyPhone();
 
-  const set =<K extends keyof FormState>(key: K, value: FormState[K]) => {
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
     setErrors((e) => ({ ...e, [key]: undefined }));
   };
 
-  // Repeat customer: a known phone fills in name and area.
+  // Keep the unfinished form on the phone.
+  useEffect(() => {
+    writeDraft(draftKey, sameForm(form, blank) ? null : { form, key: keyRef.current, savedAt: Date.now() });
+  }, [form, blank, draftKey]);
+
+  // Known phone: fill in name and area, show recent visits and any live service warranty.
   useEffect(() => {
     const phone = normalizeIndianMobile(form.phone);
-    if (work || !phone || phone === lookedUp.current || !navigator.onLine) return;
+    if (!phone) {
+      lookedUp.current = null;
+      setCustomer(null);
+      return;
+    }
+    if (phone === lookedUp.current || !navigator.onLine) return;
     lookedUp.current = phone;
-    api<{ found: boolean; name?: string; areaId?: string | null }>(`/api/lookups/customer?phone=${encodeURIComponent(phone)}`)
+    api<CustomerLookup>(`/api/lookups/customer?phone=${encodeURIComponent(phone)}`)
       .then((res) => {
-        if (!res.found) return;
+        if (lookedUp.current !== phone) return;
+        if (!res.found) {
+          setCustomer(null);
+          setForm((f) => (f.warrantyOf ? { ...f, warrantyOf: null } : f));
+          return;
+        }
+        setCustomer(res);
         const areaName = lookups?.areas.find((a) => a.id === res.areaId)?.name ?? '';
         setForm((f) => ({
           ...f,
-          customerName: f.customerName || res.name || '',
-          area: f.area || areaName,
+          customerName: work ? f.customerName : f.customerName || res.name,
+          area: work ? f.area : f.area || areaName,
+          // A tick from another number (or an expired warranty) no longer applies.
+          warrantyOf: f.warrantyOf && res.warranties.some((w) => w.invoiceId === f.warrantyOf) ? f.warrantyOf : null,
         }));
-        setKnownCustomer(true);
       })
       .catch(() => {});
   }, [form.phone, lookups, work]);
 
-  const total = toRupees(form.total);
+  const warranty = form.warrantyOf !== null;
+  const total = warranty && form.total.trim() === '' ? 0 : toRupees(form.total);
   const spare = form.spare.trim() === '' ? 0 : toRupees(form.spare);
   const negative = total !== null && spare !== null && spare > total;
+  const free = warranty && total === 0;
+  const chosenCover = customer?.warranties.find((w) => w.invoiceId === form.warrantyOf) ?? null;
 
   const applianceOptions = useMemo(
     () => (lookups?.applianceTypes ?? []).map((a) => ({ value: a.key, label: a.label })),
@@ -167,12 +217,44 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
   if (!lookups) return <Skeleton lines={10} />;
 
   function reset() {
+    writeDraft(draftKey, null);
     setForm(EMPTY);
     setErrors({});
-    setKnownCustomer(false);
+    setCustomer(null);
+    setShowRestored(false);
     lookedUp.current = null;
     keyRef.current = crypto.randomUUID();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function finishWork() {
+    writeDraft(draftKey, null);
+    onDone?.();
+  }
+
+  /** Tick: fill in the covered job; the technician adjusts what was done and any visit charge. */
+  function applyWarranty(cover: WarrantyCover | null) {
+    setErrors((e) => ({ ...e, warrantyOf: undefined, total: undefined, payment: undefined }));
+    if (!cover) {
+      setForm((f) => ({ ...f, warrantyOf: null }));
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      warrantyOf: cover.invoiceId,
+      applianceTypeKey: work ? f.applianceTypeKey : cover.applianceTypeKey,
+      brand: f.brand || (cover.brand ?? ''),
+      area: f.area || (cover.area ?? ''),
+      serviceDescription: [t.warrantyService, ...serviceParts(cover.serviceDescription)].join(', '),
+      total: '',
+      payment: null,
+    }));
+  }
+
+  function toggleService(preset: string) {
+    const parts = serviceParts(form.serviceDescription);
+    const has = parts.some((p) => p.toLowerCase() === preset.toLowerCase());
+    set('serviceDescription', (has ? parts.filter((p) => p.toLowerCase() !== preset.toLowerCase()) : [...parts, preset]).join(', '));
   }
 
   function serverErrors(err: unknown): boolean {
@@ -181,9 +263,14 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
     const mapped: Errors = {};
     for (const issue of issues) {
       const field =
-        ({ totalRupees: 'total', spareCostRupees: 'spare', confirmNegativeMargin: 'confirmNegative' } as Record<string, keyof FormState>)[
-          issue.path
-        ] ?? (issue.path as keyof FormState);
+        (
+          {
+            totalRupees: 'total',
+            spareCostRupees: 'spare',
+            confirmNegativeMargin: 'confirmNegative',
+            warrantyOfInvoiceId: 'warrantyOf',
+          } as Record<string, keyof FormState>
+        )[issue.path] ?? (issue.path as keyof FormState);
       mapped[field] = issue.message;
     }
     setErrors(Object.keys(mapped).length ? mapped : { serviceDescription: t.fixAndResubmit });
@@ -250,7 +337,7 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
           if (serverErrors(err)) return;
           if (work) {
             toast({ text: t.workGone, tone: 'error' });
-            onDone?.();
+            finishWork();
             return;
           }
         }
@@ -259,15 +346,88 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
       }
       const sentText = work ? t.workCompleted : t.submitted;
       toast({ text: outcome === 'sent' ? sentText : t.savedOffline, tone: outcome === 'sent' ? 'ok' : 'info', durationMs: 6000 });
-      if (work) onDone?.();
+      if (work) finishWork();
       else reset();
     } finally {
       setBusy(false);
     }
   }
 
+  const warrantyBox =
+    customer && customer.warranties.length > 0 ? (
+      <div className={`warranty-box${errors.warrantyOf ? ' confirm-box-error' : ''}`}>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={warranty}
+            onChange={(e) => applyWarranty(e.target.checked ? customer.warranties[0]! : null)}
+          />
+          <span className="stack-sm">
+            <strong>{t.warrantyService}</strong>
+            {customer.warranties.length === 1 || !warranty ? (
+              <span className="muted small">
+                {t.warrantyCoveredBy(
+                  formatInvoiceNumber((chosenCover ?? customer.warranties[0]!).invoiceNumber),
+                  (chosenCover ?? customer.warranties[0]!).appliance,
+                  formatDateDmy((chosenCover ?? customer.warranties[0]!).warrantyUntil),
+                )}
+              </span>
+            ) : null}
+            <span className="muted small">{t.warrantyTickHint}</span>
+          </span>
+        </label>
+        {warranty && customer.warranties.length > 1 ? (
+          <Field label={t.warrantyWhich} icon="receipt">
+            <select
+              value={form.warrantyOf ?? ''}
+              onChange={(e) => applyWarranty(customer.warranties.find((w) => w.invoiceId === e.target.value) ?? null)}
+            >
+              {customer.warranties.map((w) => (
+                <option key={w.invoiceId} value={w.invoiceId}>
+                  {t.warrantyCoveredBy(formatInvoiceNumber(w.invoiceNumber), w.appliance, formatDateDmy(w.warrantyUntil))}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+        {errors.warrantyOf ? (
+          <span className="field-error" role="alert">
+            <Icon name="alert" size={14} /> {errors.warrantyOf}
+          </span>
+        ) : null}
+      </div>
+    ) : null;
+
+  const history =
+    customer && customer.visits.length > 0 && !work ? (
+      <div className="visit-history">
+        <span className="field-label">{t.recentVisits}</span>
+        <ul className="meta">
+          {customer.visits.map((v, i) => (
+            <li key={i}>
+              <Icon name={v.warrantyService ? 'checkCircle' : 'clock'} size={16} />
+              <span>
+                {formatDateDmy(v.date)} · {v.invoiceNumber ? formatInvoiceNumber(v.invoiceNumber) : t.visitPending} · {v.appliance} -{' '}
+                {v.serviceDescription}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
+
   return (
     <form className="job-form" onSubmit={submit} noValidate>
+      {showRestored ? (
+        <p className="banner banner-info" role="status">
+          <Icon name="refresh" size={18} />
+          <span className="grow">{t.draftRestored}</span>
+          <button type="button" className="link-button" onClick={() => (work ? (setForm(blank), setShowRestored(false)) : reset())}>
+            {t.startOver}
+          </button>
+        </p>
+      ) : null}
+
       {work ? (
         <Section title={t.sectionCustomer} icon="user">
           <ul className="meta">
@@ -297,33 +457,35 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
               </li>
             ) : null}
           </ul>
+          {warrantyBox}
         </Section>
-      ) : null}
-      {work ? null : (
-      <Section title={t.sectionCustomer} icon="user">
-        <Field label={t.phone} error={errors.phone} hint={knownCustomer ? t.knownCustomer : undefined} icon="phone">
-          <input
-            type="tel"
-            inputMode="tel"
-            autoComplete="off"
-            placeholder={t.phonePlaceholder}
-            value={form.phone}
-            onChange={(e) => set('phone', e.target.value)}
+      ) : (
+        <Section title={t.sectionCustomer} icon="user">
+          <Field label={t.phone} error={errors.phone} hint={customer ? t.knownCustomer : undefined} icon="phone">
+            <input
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              placeholder={t.phonePlaceholder}
+              value={form.phone}
+              onChange={(e) => set('phone', e.target.value)}
+            />
+          </Field>
+          {history}
+          {warrantyBox}
+          <Field label={t.customerName} error={errors.customerName} icon="user">
+            <input autoComplete="off" autoCapitalize="words" value={form.customerName} onChange={(e) => set('customerName', e.target.value)} />
+          </Field>
+          <Combobox
+            label={t.area}
+            icon="pin"
+            placeholder={t.areaPlaceholder}
+            value={form.area}
+            options={areaNames}
+            onChange={(v) => set('area', v)}
+            error={errors.area}
           />
-        </Field>
-        <Field label={t.customerName} error={errors.customerName} icon="user">
-          <input autoComplete="off" autoCapitalize="words" value={form.customerName} onChange={(e) => set('customerName', e.target.value)} />
-        </Field>
-        <Combobox
-          label={t.area}
-          icon="pin"
-          placeholder={t.areaPlaceholder}
-          value={form.area}
-          options={areaNames}
-          onChange={(v) => set('area', v)}
-          error={errors.area}
-        />
-      </Section>
+        </Section>
       )}
 
       <Section title={t.sectionJob} icon="wrench">
@@ -348,30 +510,26 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
           <textarea rows={2} value={form.serviceDescription} onChange={(e) => set('serviceDescription', e.target.value)} />
         </Field>
         <div className="chips chips-small" role="group" aria-label={t.quickPicks}>
-          {lookups.servicePresets.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className="chip"
-              onClick={() =>
-                set('serviceDescription', form.serviceDescription.trim() ? `${form.serviceDescription.trim()}, ${p}` : p)
-              }
-            >
-              <Icon name="plus" size={14} />
-              {p}
-            </button>
-          ))}
+          {lookups.servicePresets.map((p) => {
+            const on = serviceParts(form.serviceDescription).some((x) => x.toLowerCase() === p.toLowerCase());
+            return (
+              <button key={p} type="button" className={`chip${on ? ' chip-on' : ''}`} aria-pressed={on} onClick={() => toggleService(p)}>
+                <Icon name={on ? 'check' : 'plus'} size={14} />
+                {p}
+              </button>
+            );
+          })}
         </div>
       </Section>
 
       <Section title={t.sectionAmount} icon="receipt">
         <div className="two-col">
           <MoneyInput
-            label={t.total}
+            label={warranty ? t.visitCharge : t.total}
             value={form.total}
             onChange={(v) => set('total', v)}
             error={errors.total}
-            hint={total !== null && total > 0 ? rupeesLabel(total) : undefined}
+            hint={total !== null && total > 0 ? rupeesLabel(total) : warranty ? t.visitChargeHint : undefined}
           />
           <MoneyInput
             label={t.spareCost}
@@ -387,24 +545,30 @@ export function JobForm({ mode, work, onDone }: { mode: 'submit' | 'copy'; work?
             <span>{t.negativeMarginConfirm}</span>
           </label>
         ) : null}
-        <Chips<PaymentChoice>
-          label={t.payment}
-          segmented
-          options={[
-            { value: 'cash', label: t.paidCash },
-            { value: 'upi', label: t.paidUpi },
-            { value: 'unpaid', label: t.notPaid },
-          ]}
-          value={form.payment}
-          onChange={(v) => set('payment', v)}
-          error={errors.payment}
-        />
+        {free ? (
+          <p className="muted small">
+            <Icon name="checkCircle" size={14} /> {t.noChargeNote}
+          </p>
+        ) : (
+          <Chips<PaymentChoice>
+            label={t.payment}
+            segmented
+            options={[
+              { value: 'cash', label: t.paidCash },
+              { value: 'upi', label: t.paidUpi },
+              { value: 'unpaid', label: t.notPaid },
+            ]}
+            value={form.payment}
+            onChange={(v) => set('payment', v)}
+            error={errors.payment}
+          />
+        )}
       </Section>
 
       <div className="action-bar">
         <div className="action-total">
           <span className="muted small">{t.customerPays}</span>
-          <strong>{total !== null && total > 0 ? rupeesLabel(total) : '₹0'}</strong>
+          <strong>{free ? t.noCharge : total !== null && total > 0 ? rupeesLabel(total) : '₹0'}</strong>
         </div>
         {mode === 'copy' ? (
           <button type="submit" className="btn btn-primary btn-large grow" disabled={busy}>

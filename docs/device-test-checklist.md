@@ -24,6 +24,11 @@ Device / browser: ______________________ Date: __________ Tester: __________
 - [ ] Nowhere does the technician see the customer message, profit or margin.
 - [ ] Offline (airplane mode): saving shows "Saved on this phone…". My Submissions shows "Not yet on server". Turning airplane mode off sends it within about 30 s, without opening the app again, and it never appears twice.
 - [ ] Close the app completely while a job is "Not yet on server", reopen it with a connection, and the job is sent.
+- [ ] Half-fill New Invoice, switch to another app (or take a call), come back or reopen the app: "Your unfinished invoice was restored." and every field is still there. Saving clears it.
+- [ ] Service chips: tap one to add it (highlighted, with a tick), tap again to remove it.
+- [ ] Type the phone of a customer served in the last 90 days: "Recent visits" appears, with a **Warranty service** tick box showing that invoice and "warranty till …".
+- [ ] Tick it: appliance, brand and "Warranty service, …" fill in; the amount box becomes "Visit charge"; leave it empty and it shows "No charge". Save, and My Jobs shows the job tagged Warranty service.
+- [ ] Untick it (a different job for the same customer): the total is required again.
 
 ### Technician labelled "Invoice + Work allocation"
 - [ ] The first tab is **Works assigned**; its badge shows the number of open jobs. An "Invoice only" technician has no such tab.
@@ -43,7 +48,8 @@ Device / browser: ______________________ Date: __________ Tester: __________
 - [ ] Message preview shows "(assigned on copy)" before copying.
 - [ ] **Copy phone** first: the 10-digit number (e.g. 9876543210) is copied; paste it in WhatsApp search and it finds the customer. The button then reads **Copy invoice**.
 - [ ] Go to WhatsApp and come back (even if the app reloads): the card still shows **Copy invoice**, with a "Copy phone again" link.
-- [ ] **Copy invoice**: paste into WhatsApp and check the text is exact (name, INV number, date dd/mm/yyyy, ₹ total with Indian commas, warranty line, phone).
+- [ ] **Copy invoice**: paste into WhatsApp and check the text: bold labels, INV number, date dd/mm/yyyy, service done, ₹ amount with Indian commas, payment, warranty "90 days on our service, till … Spare parts are not covered", the Terms & Conditions link (if set), phone. No line wraps into a second line of dashes.
+- [ ] A warranty service card shows "Warranty for INV-…" and "No charge" (or the visit charge); its message says "Warranty service for INV-…" and "covered under INV-… till …".
 - [ ] After copying, a confirmation "INV-… for … copied. Paste it in WhatsApp." appears, with **no** chat pop-up or link.
 - [ ] Switch to WhatsApp, send, come back: the app has reloaded and the card is under "Recently copied".
 - [ ] Copy again (Copy phone, then Copy again) and Put back in queue work from "Recently copied". There is no WhatsApp chat button anywhere in the app.
@@ -71,8 +77,9 @@ Device / browser: ______________________ Date: __________ Tester: __________
 
 ## D. Desktop Chrome / Edge (Master, 1366×768 and 1920×1080)
 - [ ] Sign-in asks for the PIN on a second page.
-- [ ] The sidebar shows Dashboard, Work Inv (with badge), New Invoice, All Invoices, Void requests, Work orders and Team.
-- [ ] Alt+1 to Alt+7 switch sections; "/" jumps to invoice search.
+- [ ] The sidebar shows only Dashboard, Work Inv (with badge), All Invoices, Work orders and Settings. There is no New Invoice for the Master.
+- [ ] All Invoices has a **Void requests** tab (with a count when requests wait); Settings shows square tiles (**Team**, **Invoice Template**); each opens its own page with "‹ Settings" to go back (the browser's Back works too).
+- [ ] Alt+1 to Alt+5 switch sections; "/" jumps to invoice search.
 - [ ] The invoice table shows spare cost, gross profit (red if negative), and Self-issued / Edited / Void requested flags.
 - [ ] "Load more" pages through older invoices.
 - [ ] Date filter: Today, Yesterday and Date range (From/To pickers) show only invoices with those invoice dates; From after To shows an error.
@@ -81,6 +88,7 @@ Device / browser: ______________________ Date: __________ Tester: __________
 - [ ] Team → Add user: a Technician cannot be created until Invoice only or Invoice + Work allocation is chosen; an Admin Technician needs a PIN. The details card is shown once and Copy details works.
 - [ ] Team → Edit switches a technician's type; Password / PIN signs that person out; Remove stops them signing in and Restore lets them back in.
 - [ ] Team actions ask for the PIN when the last PIN entry is over 5 minutes old.
+- [ ] Settings (Alt+5) → Invoice Template: paste the Google Drive T&C link, "Open link" opens the PDF (while signed out of Google too), the preview shows it, Save asks for the PIN if needed. The next invoice copied includes the link.
 - [ ] The window narrowed to phone width still works (no sideways scrolling).
 
 ## E. Every device

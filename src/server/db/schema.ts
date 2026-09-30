@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   bigint,
   bigserial,
   boolean,
@@ -296,8 +297,15 @@ export const invoices = pgTable(
     editedFlag: boolean('edited_flag').notNull().default(false),
     negativeMarginFlag: boolean('negative_margin_flag').notNull().default(false),
     selfIssuedFlag: boolean('self_issued_flag').notNull().default(false),
+    /**
+     * Warranty service (owner, 30 Sep 2026): the earlier invoice whose 90-day service warranty
+     * covers this visit. Such an invoice may be ₹0 (free) or carry a visit charge, and gives no
+     * new warranty of its own: the cover stays with the original invoice.
+     */
+    warrantyOfInvoiceId: uuid('warranty_of_invoice_id').references((): AnyPgColumn => invoices.id),
+    /** Last day of the 90-day warranty on our service (labour). Null on a warranty service. */
     warrantyExpiresAt: date('warranty_expires_at', { mode: 'string' }).generatedAlwaysAs(
-      sql`invoice_date + 90`,
+      sql`case when warranty_of_invoice_id is null then invoice_date + 90 end`,
     ),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -306,7 +314,13 @@ export const invoices = pgTable(
     index('invoices_state_submitted_idx').on(t.state, t.submittedAt),
     index('invoices_submitted_by_idx').on(t.submittedBy, t.submittedAt),
     index('invoices_job_idx').on(t.jobId),
-    check('invoices_total_positive_ck', sql`${t.totalPaise} > 0`),
+    index('invoices_warranty_of_idx').on(t.warrantyOfInvoiceId),
+    // Only a warranty service may be free (₹0).
+    check(
+      'invoices_total_positive_ck',
+      sql`${t.totalPaise} > 0 or (${t.warrantyOfInvoiceId} is not null and ${t.totalPaise} = 0)`,
+    ),
+    check('invoices_warranty_not_self_ck', sql`${t.warrantyOfInvoiceId} is null or ${t.warrantyOfInvoiceId} <> ${t.id}`),
     check('invoices_spare_nonneg_ck', sql`${t.spareCostPaise} >= 0`),
     check('invoices_tax_nonneg_ck', sql`${t.taxPaise} >= 0`),
     check('invoices_number_range_ck', sql`${t.invoiceNumber} is null or ${t.invoiceNumber} >= 10000`),

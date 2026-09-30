@@ -17,7 +17,7 @@ The owner also answered two questions:
 
 ## How it works
 
-### Team panel (Master, desktop rail → Team, Alt+7)
+### Team panel (Master, desktop: Settings → Team tile, Alt+5)
 
 | Action | Notes |
 |---|---|
@@ -31,7 +31,7 @@ The owner also answered two questions:
 
 Every change asks for the Master's PIN again if the last PIN entry was more than 5 minutes ago (step-up). Each change is written to `audit_log` with old and new values; passwords and PINs are never logged.
 
-### Work orders (Master: rail → Work orders, Alt+6; Admin Technician: bottom tab)
+### Work orders (Master: rail → Work orders, Alt+4; Admin Technician: bottom tab)
 
 - **New work order:** customer phone (a known phone fills in the name and area), name, area, visit address, appliance, brand (optional), complaint, visit date and time, and the technician. Only active **Invoice + Work** technicians are offered, each with their count of open jobs.
 - Tabs: **Open** (assigned or in progress), **Completed** (with the invoice's status and number once issued) and **Cancelled**.
@@ -43,6 +43,7 @@ Every change asks for the Master's PIN again if the last PIN entry was more than
 - The tab badge shows the open jobs. Jobs are listed with the soonest visit first, followed by those completed in the last 7 days and those cancelled in the last 2 days.
 - **Call** dials the customer. **Start job** marks it In progress. **Complete & create invoice** opens the job form with the customer and appliance already filled in; the technician adds the brand, the work done, the amounts and the payment.
 - The invoice then waits in **Technician Work Inv** like any other job: no number until the office copies it.
+- If the customer's phone has a live service warranty, the completion form shows the same **Warranty service** tick box as New Invoice (free, or a visit charge).
 - If the office **rejects** that invoice, the job returns to the technician as In progress, showing "Sent back by the office: reason". They complete it again with corrected details. A rejected walk-in job (not a work order) is still cancelled, as before.
 - **Offline:** the last list is kept on the phone. Completing a job while offline stores it in the same outbox as New Invoice ("Not yet on server") and sends it when the connection returns. If the office re-assigned or cancelled the job in the meantime, the technician sees "This job was re-assigned or cancelled by the office."
 

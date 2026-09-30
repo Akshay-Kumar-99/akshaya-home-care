@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SessionInfo } from '../../shared/api-types.ts';
 import { api, isNetworkError, onAuthEvent } from '../lib/api.ts';
+import { clearFormDrafts } from '../lib/drafts.ts';
 import { clearWorkCache } from './work.tsx';
 
 // App session state machine. The server is the source of truth: the idle PIN lock and the
@@ -114,6 +115,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
     writeCache(null);
     clearWorkCache();
+    clearFormDrafts();
     setPhase({ kind: 'anonymous' });
   }, []);
 
